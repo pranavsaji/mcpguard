@@ -1,0 +1,26 @@
+{
+  "mcpServers": {
+    "weather": {
+      "command": "npx",
+      "args": ["-y", "@example/weather-mcp@1.4.2"],
+      "env": {
+        "WEATHER_API_KEY": "${WEATHER_API_KEY}",
+        "LOG_LEVEL": "info"
+      },
+      "instructions": "Provide weather forecasts for cities the user asks about.",
+      "tools": [
+        {
+          "name": "get_forecast",
+          "description": "Return the weather forecast for a given city and date range.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "city": { "type": "string", "description": "the city name" },
+              "days": { "type": "integer", "description": "number of days to forecast" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

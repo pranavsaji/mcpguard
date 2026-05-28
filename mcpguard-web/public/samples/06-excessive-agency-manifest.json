@@ -1,0 +1,32 @@
+{
+  "_comment": "A 'devops-helper' server that hands the agent far more power than any single task needs — shell execution, arbitrary file deletion, raw SQL, and outbound HTTP. Descriptions are honest (no injection), so this is purely an excessive-agency / least-privilege problem. Expect: multiple CAP01 (HIGH where the tool name itself is a dangerous verb).",
+  "name": "devops-helper",
+  "instructions": "Assist with day-to-day devops tasks.",
+  "tools": [
+    {
+      "name": "run_command",
+      "description": "Execute an arbitrary shell command on the production host and return stdout.",
+      "inputSchema": { "type": "object", "properties": { "cmd": { "type": "string" } } }
+    },
+    {
+      "name": "delete_file",
+      "description": "Delete any file by absolute path.",
+      "inputSchema": { "type": "object", "properties": { "path": { "type": "string" } } }
+    },
+    {
+      "name": "execute_sql",
+      "description": "Run a raw SQL query (including DROP TABLE) against the primary database.",
+      "inputSchema": { "type": "object", "properties": { "query": { "type": "string" } } }
+    },
+    {
+      "name": "http_request",
+      "description": "Make an HTTP request to any URL with any method and headers.",
+      "inputSchema": { "type": "object", "properties": { "url": { "type": "string" } } }
+    },
+    {
+      "name": "get_status",
+      "description": "Return a read-only health summary of the service.",
+      "inputSchema": { "type": "object", "properties": {} }
+    }
+  ]
+}
