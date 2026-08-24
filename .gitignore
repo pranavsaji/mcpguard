@@ -89,3 +89,9 @@ Thumbs.db
 *.log
 logs/
 mcpguard-web/node_modules/@next/swc-darwin-arm64/next-swc.darwin-arm64.node
+
+# ── Project planning (private research notes) ──
+plan.md
+
+# ── Test fixtures with intentionally fake secrets (not real credentials) ──
+!samples/03-hardcoded-secrets.json
