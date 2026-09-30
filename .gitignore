@@ -16,6 +16,10 @@ gcp-*.json
 *-key.json
 secrets/
 .secrets/
+# Source files and demo fixtures whose *names* match the patterns above but hold no
+# secrets (the SEC01 detector, and a sample of fake, format-valid keys it detects).
+!mcpguard/src/mcpguard/rules/secrets.py
+!mcpguard-web/public/samples/03-hardcoded-secrets.json
 
 # ── Python ──
 __pycache__/
