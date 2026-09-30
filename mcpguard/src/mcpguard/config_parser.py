@@ -26,6 +26,7 @@ from .models import (
     MCPTool,
     Transport,
 )
+from .source_resolver import resolve_package_source
 
 __all__ = ["ConfigError", "load_targets", "parse_config", "parse_manifest"]
 
@@ -45,6 +46,8 @@ def load_targets(path: str) -> list[MCPServerSpec]:
         data = json.loads(raw)
     except json.JSONDecodeError as exc:
         raise ConfigError(f"{path!r} is not valid JSON: {exc}") from exc
+    except RecursionError as exc:
+        raise ConfigError(f"{path!r} is nested too deeply to be an MCP config") from exc
     if not isinstance(data, dict):
         raise ConfigError(f"{path!r}: top-level JSON must be an object")
     return parse_config(data, base_dir=os.path.dirname(os.path.abspath(path)))
@@ -79,9 +82,15 @@ def _parse_server(
     name: str, entry: dict[str, Any], *, base_dir: str | None
 ) -> MCPServerSpec:
     command = entry.get("command")
-    args = tuple(str(a) for a in entry.get("args", []) if a is not None)
-    env = {str(k): str(v) for k, v in (entry.get("env") or {}).items()}
+    raw_args = entry.get("args")
+    args = tuple(str(a) for a in raw_args if a is not None) if isinstance(raw_args, list) else ()
+    raw_env = entry.get("env")
+    env = {str(k): str(v) for k, v in raw_env.items()} if isinstance(raw_env, dict) else {}
     url = entry.get("url")
+    raw_headers = entry.get("headers")
+    headers = (
+        {str(k): str(v) for k, v in raw_headers.items()} if isinstance(raw_headers, dict) else {}
+    )
 
     transport = _infer_transport(command, url, entry.get("type"))
     manifest = parse_manifest(entry) if ("tools" in entry or "instructions" in entry) else None
@@ -94,6 +103,7 @@ def _parse_server(
         args=args,
         env=env,
         url=str(url) if url else None,
+        headers=headers,
         source_path=source_path,
         manifest=manifest,
     )
@@ -131,7 +141,9 @@ def _resolve_source(
         candidate = _abs(arg)
         if os.path.exists(candidate) and os.path.splitext(candidate)[1]:
             return candidate
-    return None
+
+    # Finally: a copy of an npx/uvx-launched package already installed locally.
+    return resolve_package_source(str(command) if command else None, args, base_dir)
 
 
 def parse_manifest(data: dict[str, Any]) -> MCPManifest:
@@ -146,7 +158,14 @@ def parse_manifest(data: dict[str, Any]) -> MCPManifest:
         for r in _as_list(data.get("resources"))
     )
     prompts = tuple(
-        MCPPrompt(name=str(p.get("name", "")), description=str(p.get("description", "")))
+        MCPPrompt(
+            name=str(p.get("name", "")),
+            description=str(p.get("description", "")),
+            arguments={
+                str(a.get("name", "")): str(a.get("description", ""))
+                for a in _as_list(p.get("arguments"))
+            },
+        )
         for p in _as_list(data.get("prompts"))
     )
     return MCPManifest(
@@ -159,10 +178,15 @@ def parse_manifest(data: dict[str, Any]) -> MCPManifest:
 
 def _parse_tool(data: dict[str, Any]) -> MCPTool:
     schema = data.get("inputSchema") or data.get("input_schema") or {}
+    output = data.get("outputSchema") or data.get("output_schema") or {}
+    annotations = data.get("annotations") or {}
     return MCPTool(
         name=str(data.get("name", "")),
         description=str(data.get("description", "")),
         input_schema=schema if isinstance(schema, dict) else {},
+        title=str(data.get("title") or ""),
+        annotations=annotations if isinstance(annotations, dict) else {},
+        output_schema=output if isinstance(output, dict) else {},
     )
 
 

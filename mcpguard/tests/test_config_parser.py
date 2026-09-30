@@ -98,6 +98,21 @@ class TestParseManifest:
         manifest = parse_manifest({"tools": [{"name": "t", "input_schema": {"x": 1}}]})
         assert manifest.tools[0].input_schema == {"x": 1}
 
+    def test_parses_remote_server_headers(self) -> None:
+        (spec,) = parse_config(
+            {
+                "servers": {
+                    "remote": {
+                        "type": "http",
+                        "url": "https://mcp.example/mcp",
+                        "headers": {"Authorization": "Bearer ${TOKEN}"},
+                    }
+                }
+            }
+        )
+        assert spec.headers == {"Authorization": "Bearer ${TOKEN}"}
+        assert parse_config({"url": "https://x.example/sse"})[0].headers == {}
+
     def test_tolerates_malformed_entries(self) -> None:
         manifest = parse_manifest({"tools": ["not-a-dict", {"name": "ok"}], "resources": "nope"})
         assert [t.name for t in manifest.tools] == ["ok"]

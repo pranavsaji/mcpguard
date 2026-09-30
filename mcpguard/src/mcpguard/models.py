@@ -75,6 +75,11 @@ class Category(str, Enum):
     SUPPLY_CHAIN = "supply_chain"
     RUG_PULL = "rug_pull"
     MANIFEST_DRIFT = "manifest_drift"
+    TOOL_SHADOWING = "tool_shadowing"
+    TOXIC_FLOW = "toxic_flow"
+    VULNERABLE_COMPONENT = "vulnerable_component"
+    INSECURE_CONFIG = "insecure_config"
+    INSECURE_TRANSPORT = "insecure_transport"
 
     def __str__(self) -> str:
         return self.value
@@ -219,13 +224,85 @@ class Transport(str, Enum):
         return self.value
 
 
+# Keywords holding a map of *named* subschemas; their keys are names, not keywords.
+_NAMED_SUBSCHEMA_KEYS: frozenset[str] = frozenset(
+    {"properties", "patternProperties", "$defs", "definitions", "dependentSchemas", "dependencies"}
+)
+# Standard JSON Schema keywords. Any *other* key is itself model-visible text.
+_SCHEMA_KEYWORDS: frozenset[str] = frozenset({
+    "$schema", "$id", "$ref", "$anchor", "$dynamicRef", "$dynamicAnchor", "$comment", "$vocabulary",
+    "type", "title", "description", "default", "examples", "enum", "const", "format", "pattern",
+    "required", "items", "prefixItems", "additionalItems", "additionalProperties", "contains",
+    "minContains", "maxContains", "propertyNames", "unevaluatedItems", "unevaluatedProperties",
+    "anyOf", "oneOf", "allOf", "not", "if", "then", "else", "minimum", "maximum",
+    "exclusiveMinimum", "exclusiveMaximum", "multipleOf", "minLength", "maxLength", "minItems",
+    "maxItems", "uniqueItems", "minProperties", "maxProperties", "dependentRequired",
+    "contentEncoding", "contentMediaType", "contentSchema", "readOnly", "writeOnly", "deprecated",
+    "nullable", *_NAMED_SUBSCHEMA_KEYS,
+})
+_MAX_SCHEMA_DEPTH = 32
+
+
+def schema_text_fields(schema: object, prefix: str = "") -> list[tuple[str, str]]:
+    """Every model-visible string in a JSON schema as ``(path, text)`` pairs.
+
+    Walks *every* string value (descriptions, titles, defaults, enums, examples,
+    ``required`` entries, even ``type``), every non-keyword key, and every
+    property / definition name, at any depth and through any composition
+    keyword. This is the "Full-Schema Poisoning" surface: the model reads the
+    whole schema, so an injection in a nested enum or an unknown ``x-`` key is
+    as live as one in a description. Paths read like ``q.title`` /
+    ``opts.mode.enum`` / ``q.<name>`` (a property name) / ``q.x-note#key``.
+    """
+    out: list[tuple[str, str]] = []
+    _walk_schema(schema, prefix, out, 0)
+    return out
+
+
+def _walk_schema(node: object, path: str, out: list[tuple[str, str]], depth: int) -> None:
+    if depth > _MAX_SCHEMA_DEPTH:
+        return
+    if isinstance(node, str):
+        if node:
+            out.append((path, node))
+    elif isinstance(node, list):
+        scalars = [str(v) for v in node if isinstance(v, (str, int, float)) and not isinstance(v, bool)]
+        if any(scalars):
+            out.append((path, " | ".join(scalars)))
+        for index, item in enumerate(node):
+            if isinstance(item, (dict, list)):
+                _walk_schema(item, f"{path}[{index}]", out, depth + 1)
+    elif isinstance(node, dict):
+        for raw_key, value in node.items():
+            key = str(raw_key)
+            child = f"{path}.{key}" if path else key
+            if key in _NAMED_SUBSCHEMA_KEYS and isinstance(value, dict):
+                for raw_name, sub in value.items():
+                    name = str(raw_name)
+                    named = f"{path}.{name}" if path else name
+                    out.append((f"{named}.<name>", name))
+                    _walk_schema(sub, named, out, depth + 1)
+                continue
+            if key not in _SCHEMA_KEYWORDS:
+                out.append((f"{child}#key", key))
+            _walk_schema(value, child, out, depth + 1)
+
+
 @dataclass(frozen=True, slots=True)
 class MCPTool:
-    """A tool advertised by an MCP server."""
+    """A tool advertised by an MCP server.
+
+    ``annotations`` are the MCP behavior hints (``readOnlyHint``,
+    ``destructiveHint``, ``openWorldHint``, ``title``); ``output_schema`` is the
+    structured-output schema. Both are model-visible and carried for analysis.
+    """
 
     name: str
     description: str = ""
     input_schema: dict[str, object] = field(default_factory=dict)
+    title: str = ""
+    annotations: dict[str, object] = field(default_factory=dict)
+    output_schema: dict[str, object] = field(default_factory=dict)
 
     @property
     def parameter_descriptions(self) -> dict[str, str]:
@@ -241,6 +318,29 @@ class MCPTool:
                     out[str(pname)] = desc
         return out
 
+    def text_fields(self) -> list[tuple[str, str]]:
+        """Every model-visible text field as ``(field label, text)``.
+
+        The description, title, annotation title, and every string anywhere in
+        the input and output schemas (see :func:`schema_text_fields`).
+        """
+        fields: list[tuple[str, str]] = [("description", self.description)]
+        if self.title:
+            fields.append(("title", self.title))
+        ann_title = self.annotations.get("title")
+        if isinstance(ann_title, str) and ann_title:
+            fields.append(("annotations.title", ann_title))
+        # Walk ``properties`` as a map so paths start at the parameter name.
+        for path, text in schema_text_fields({"properties": self.input_schema.get("properties")}):
+            if path.endswith(".<name>"):
+                fields.append((f"param:{path.removesuffix('.<name>')}#name", text))
+            else:  # "q.description" -> "param:q"; "q.enum" -> "param:q.enum"
+                fields.append((f"param:{path.removesuffix('.description')}", text))
+        rest = {k: v for k, v in self.input_schema.items() if k != "properties"}
+        fields.extend((f"inputSchema.{p}", t) for p, t in schema_text_fields(rest))
+        fields.extend((f"outputSchema.{p}", t) for p, t in schema_text_fields(self.output_schema))
+        return [(label, text) for label, text in fields if text]
+
 
 @dataclass(frozen=True, slots=True)
 class MCPResource:
@@ -251,8 +351,16 @@ class MCPResource:
 
 @dataclass(frozen=True, slots=True)
 class MCPPrompt:
+    """A prompt template; ``arguments`` maps argument name -> description."""
+
     name: str
     description: str = ""
+    arguments: dict[str, str] = field(default_factory=dict)
+
+    def text_fields(self) -> list[tuple[str, str]]:
+        fields = [("description", self.description)]
+        fields.extend((f"arg:{name}", desc) for name, desc in self.arguments.items())
+        return [(label, text) for label, text in fields if text]
 
 
 @dataclass(frozen=True, slots=True)
@@ -269,13 +377,32 @@ class MCPManifest:
     resources: tuple[MCPResource, ...] = ()
     prompts: tuple[MCPPrompt, ...] = ()
 
+    def text_fields(self) -> list[tuple[str | None, str, str]]:
+        """Every model-visible string as ``(owner, field, text)``.
+
+        ``owner`` is the tool / prompt / resource the text belongs to (``None``
+        for server instructions). This is the full metadata attack surface that
+        the poisoning, hidden-content, and shadowing rules scan.
+        """
+        out: list[tuple[str | None, str, str]] = []
+        if self.instructions:
+            out.append((None, "instructions", self.instructions))
+        for tool in self.tools:
+            out.extend((tool.name, label, text) for label, text in tool.text_fields())
+        for prompt in self.prompts:
+            out.extend((prompt.name, label, text) for label, text in prompt.text_fields())
+        for resource in self.resources:
+            if resource.description:
+                out.append((resource.name or resource.uri, "description", resource.description))
+        return out
+
 
 @dataclass(frozen=True, slots=True)
 class MCPServerSpec:
     """A scan target: one MCP server, however it was declared.
 
     ``command``/``args``/``env`` describe a local STDIO server; ``url`` describes
-    a remote one. ``source_path`` points at on-disk source if we can locate it
+    a remote one (with any HTTP ``headers``, e.g. auth). ``source_path`` points at on-disk source if we can locate it
     (enables source-level RCE analysis). ``manifest`` is attached when known.
     """
 
@@ -285,6 +412,7 @@ class MCPServerSpec:
     args: tuple[str, ...] = ()
     env: dict[str, str] = field(default_factory=dict)
     url: str | None = None
+    headers: dict[str, str] = field(default_factory=dict)
     source_path: str | None = None
     manifest: MCPManifest | None = None
 

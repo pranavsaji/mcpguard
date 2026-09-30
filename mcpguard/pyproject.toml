@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcpguard"
-version = "0.1.0"
+version = "0.2.0"
 description = "Security scanner for Model Context Protocol (MCP) servers — the `npm audit` for MCP."
 readme = "README.md"
 requires-python = ">=3.10"
@@ -27,6 +27,9 @@ dependencies = []
 # Live "--connect" dynamic analysis needs the MCP client SDK. Optional so the
 # static core stays dependency-free.
 connect = ["mcp>=1.2.0"]
+# AI judge layer. Jev (TypeSafe) needs no extra: it is called over stdlib HTTP.
+# The Claude judge uses the official Anthropic SDK.
+claude = ["anthropic>=1.9"]
 dev = ["pytest>=8.0", "pytest-cov>=5.0", "mypy>=1.10", "ruff>=0.5"]
 
 [project.scripts]
@@ -42,6 +45,7 @@ packages = ["src/mcpguard"]
 testpaths = ["tests"]
 addopts = "-ra -q"
 pythonpath = ["src"]
+markers = ["live: calls a real AI judge API (needs TYPESAFE_API_KEY / ANTHROPIC_API_KEY; costs money)"]
 
 [tool.coverage.run]
 branch = true
@@ -58,5 +62,5 @@ files = ["src/mcpguard"]
 
 # Optional 'connect' extra deps; absent in the default (static-only) install.
 [[tool.mypy.overrides]]
-module = ["mcp.*", "anyio"]
+module = ["mcp.*", "anyio", "anthropic", "anthropic.*"]
 ignore_missing_imports = true

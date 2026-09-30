@@ -1,5 +1,5 @@
 {
-  "_comment": "The same servers done right: every package pinned to an exact version, all secrets via ${ENV} references. This should pass cleanly (no findings).",
+  "_comment": "The same servers done right: every package pinned to an exact version, all secrets via ${ENV} references. Passes the gate. What remains is architectural, not fixable by config hygiene: FLOW01 (medium) notes that filesystem + GitHub together form a lethal trifecta for indirect prompt injection, and SUP02 (low) that @modelcontextprotocol/server-github is archived (the maintained server is ghcr.io/github/github-mcp-server).",
   "mcpServers": {
     "filesystem": {
       "command": "npx",

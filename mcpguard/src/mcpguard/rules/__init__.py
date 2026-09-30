@@ -7,20 +7,27 @@ optionally filtered to the static set (the default, hermetic mode).
 
 from __future__ import annotations
 
-from .base import Rule, RuleKind, register, registered_rule_classes
+# Dynamic rules live in the `dynamic` package; importing registers them too.
+from ..dynamic import drift  # noqa: E402,F401
 
 # Import side-effect: each module registers its rule(s) on import.
 from . import (  # noqa: E402,F401  (imported for registration side-effects)
+    ai_judge,
+    ai_purpose,
+    ai_source,
     command_injection,
     excessive_agency,
     hidden_content,
+    launch_config,
     pinning,
     secrets,
+    shadowing,
     tool_poisoning,
+    toxic_flow,
+    transport,
+    vulnerable_packages,
 )
-
-# Dynamic rules live in the `dynamic` package; importing registers them too.
-from ..dynamic import drift  # noqa: E402,F401
+from .base import Rule, RuleKind, register, registered_rule_classes
 
 __all__ = ["Rule", "RuleKind", "register", "load_rules"]
 

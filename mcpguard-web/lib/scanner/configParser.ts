@@ -1,15 +1,13 @@
 /**
- * Parse MCP config / manifest JSON into server specs (TypeScript port).
- * Accepts the same shapes as the Python engine: `mcpServers`/`servers` maps,
- * a single inline server, or a bare tool manifest.
+ * Parse MCP config / manifest JSON into server specs (TypeScript port of
+ * `config_parser.py`). Accepts the same shapes as the Python engine:
+ * `mcpServers`/`servers` maps, a single inline server, or a bare tool manifest.
+ * Values are coerced with Python's `str()` / truthiness rules so both engines
+ * build identical specs from the same JSON.
  */
 
-import type {
-  MCPManifest,
-  MCPServerSpec,
-  MCPTool,
-  Transport,
-} from "./types";
+import { JsonTooDeepError, orderedEntries, orderedMap, parseJson, pyOr, pyStr, pyTruthy } from "./pycompat";
+import type { MCPManifest, MCPPrompt, MCPServerSpec, MCPTool, Transport } from "./types";
 
 export class ConfigError extends Error {}
 
@@ -24,89 +22,125 @@ function asArray(value: unknown): Json[] {
   return value.filter((v): v is Json => !!asRecord(v));
 }
 
-function str(value: unknown, fallback = ""): string {
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return fallback;
+function has(obj: Json, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key);
 }
 
-export function parseManifest(data: Json): MCPManifest {
-  const tools: MCPTool[] = asArray(data.tools).map((t) => {
-    const schema = (t.inputSchema ?? t.input_schema) as unknown;
-    return {
-      name: str(t.name),
-      description: str(t.description),
-      inputSchema: asRecord(schema) ?? {},
-    };
-  });
+/** Python `obj.get(key, fallback)`. */
+function get(obj: Json, key: string, fallback?: unknown): unknown {
+  return has(obj, key) ? obj[key] : fallback;
+}
+
+/** Python `str(obj.get(key, fallback))`. */
+function getStr(obj: Json, key: string, fallback = ""): string {
+  return pyStr(get(obj, key, fallback));
+}
+
+/** Python `{str(k): str(v) for k, v in d.items()}`. */
+function strMap(d: Json): Record<string, string> {
+  return orderedMap(orderedEntries(d).map(([k, v]) => [k, pyStr(v)] as [string, string]));
+}
+
+function parseTool(t: Json): MCPTool {
+  const schema = pyOr(pyOr(get(t, "inputSchema"), get(t, "input_schema")), {});
+  const output = pyOr(pyOr(get(t, "outputSchema"), get(t, "output_schema")), {});
+  const annotations = pyOr(get(t, "annotations"), {});
   return {
-    instructions: str(data.instructions),
-    tools,
-    resources: asArray(data.resources).map((r) => ({
-      uri: str(r.uri),
-      name: str(r.name),
-      description: str(r.description),
-    })),
-    prompts: asArray(data.prompts).map((p) => ({
-      name: str(p.name),
-      description: str(p.description),
-    })),
+    name: getStr(t, "name"),
+    description: getStr(t, "description"),
+    inputSchema: asRecord(schema) ?? {},
+    title: pyStr(pyOr(get(t, "title"), "")),
+    annotations: asRecord(annotations) ?? {},
+    outputSchema: asRecord(output) ?? {},
   };
 }
 
+function parsePrompt(p: Json): MCPPrompt {
+  const args = orderedMap(
+    asArray(get(p, "arguments")).map((a) => [getStr(a, "name"), getStr(a, "description")] as [string, string]),
+  );
+  return { name: getStr(p, "name"), description: getStr(p, "description"), arguments: args };
+}
+
+export function parseManifest(data: Json): MCPManifest {
+  return {
+    instructions: getStr(data, "instructions"),
+    tools: asArray(get(data, "tools")).map(parseTool),
+    resources: asArray(get(data, "resources")).map((r) => ({
+      uri: getStr(r, "uri"),
+      name: getStr(r, "name"),
+      description: getStr(r, "description"),
+    })),
+    prompts: asArray(get(data, "prompts")).map(parsePrompt),
+  };
+}
+
+const TRANSPORTS: readonly Transport[] = ["stdio", "http", "sse", "unknown"];
+
 function inferTransport(command: unknown, url: unknown, declared: unknown): Transport {
   if (typeof declared === "string") {
-    const d = declared.toLowerCase();
-    if (d === "stdio" || d === "http" || d === "sse") return d;
+    const d = declared.toLowerCase() as Transport;
+    if (TRANSPORTS.includes(d)) return d;
   }
-  if (command) return "stdio";
+  if (pyTruthy(command)) return "stdio";
   if (typeof url === "string") return url.replace(/\/+$/, "").endsWith("sse") ? "sse" : "http";
   return "unknown";
 }
 
-function parseServer(name: string, entry: Json): MCPServerSpec {
-  const command = entry.command;
-  const args = Array.isArray(entry.args) ? entry.args.map((a) => str(a)).filter(Boolean) : [];
-  const env: Record<string, string> = {};
-  const rawEnv = asRecord(entry.env);
-  if (rawEnv) for (const [k, v] of Object.entries(rawEnv)) env[k] = str(v);
+/** Python: `tuple(str(a) for a in raw_args if a is not None) if isinstance(raw_args, list) else ()`. */
+function parseArgs(entry: Json): string[] {
+  const raw = get(entry, "args");
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((a) => a !== null && a !== undefined).map(pyStr);
+}
 
-  const hasManifest = "tools" in entry || "instructions" in entry;
+function parseServer(name: string, entry: Json): MCPServerSpec {
+  const command = get(entry, "command");
+  const url = get(entry, "url");
+
+  const rawEnv = asRecord(get(entry, "env"));
+  const rawHeaders = asRecord(get(entry, "headers"));
+
+  const hasManifest = has(entry, "tools") || has(entry, "instructions");
   return {
     name,
-    transport: inferTransport(command, entry.url, entry.type),
-    command: command ? str(command) : null,
-    args,
-    env,
-    url: entry.url ? str(entry.url) : null,
+    transport: inferTransport(command, url, get(entry, "type")),
+    command: pyTruthy(command) ? pyStr(command) : null,
+    args: parseArgs(entry),
+    env: rawEnv ? strMap(rawEnv) : {},
+    url: pyTruthy(url) ? pyStr(url) : null,
+    headers: rawHeaders ? strMap(rawHeaders) : {},
     manifest: hasManifest ? parseManifest(entry) : null,
   };
 }
 
 export function parseConfig(data: Json): MCPServerSpec[] {
-  const serversMap = asRecord(data.mcpServers) ?? asRecord(data.servers);
+  const serversMap = asRecord(pyOr(get(data, "mcpServers"), get(data, "servers")));
   if (serversMap) {
-    return Object.entries(serversMap)
+    return orderedEntries(serversMap)
       .filter(([, entry]) => asRecord(entry))
       .map(([name, entry]) => parseServer(name, entry as Json));
   }
 
-  if (("tools" in data || "instructions" in data) && !("command" in data) && !("url" in data)) {
+  // A bare manifest (tools/instructions but no launch info).
+  if ((has(data, "tools") || has(data, "instructions")) && !has(data, "command") && !has(data, "url")) {
     return [
       {
-        name: str(data.name, "manifest"),
+        name: getStr(data, "name", "manifest"),
         transport: "unknown",
         command: null,
         args: [],
         env: {},
         url: null,
+        headers: {},
         manifest: parseManifest(data),
       },
     ];
   }
 
-  if ("command" in data || "url" in data) {
-    return [parseServer(str(data.name, "server"), data)];
+  // A single inline server object.
+  if (has(data, "command") || has(data, "url")) {
+    return [parseServer(getStr(data, "name", "server"), data)];
   }
 
   throw new ConfigError(
@@ -118,8 +152,9 @@ export function parseConfig(data: Json): MCPServerSpec[] {
 export function parseConfigText(text: string): MCPServerSpec[] {
   let data: unknown;
   try {
-    data = JSON.parse(text);
+    data = parseJson(text); // JSON.parse + Python dict key order
   } catch (e) {
+    if (e instanceof JsonTooDeepError) throw new ConfigError("Config is nested too deeply to be an MCP config.");
     throw new ConfigError(`Not valid JSON: ${(e as Error).message}`);
   }
   const record = asRecord(data);
