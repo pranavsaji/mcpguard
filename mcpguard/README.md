@@ -113,7 +113,7 @@ failed = any(r.failed(Severity.HIGH) for r in reports)
 ## Development
 
 ```bash
-pytest --cov=mcpguard     # 771 tests, 94% branch coverage
+pytest --cov=mcpguard     # 773 tests, 94% branch coverage
 pytest -m live            # real Jev / Claude calls (needs keys)
 mcpguard redteam          # detection / false-positive report
 mypy                      # strict
