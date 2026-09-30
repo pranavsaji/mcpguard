@@ -17,6 +17,7 @@ from .models import MCPManifest, MCPServerSpec
 if TYPE_CHECKING:  # avoid an import cycle; only needed for typing
     from .ai import AIConfig
     from .dynamic.connector import Connector
+    from .dynamic.oauth import AuthMetadata
     from .lockfile import LockEntry
 
 # Extensions worth scanning for command-injection / RCE patterns.
@@ -58,6 +59,9 @@ class AnalysisContext:
     ai:
         The AI judge configuration when the scan runs with ``--ai``; rules that
         consult it (AI01, FLOW01 roles, MAN01 drift) are no-ops without it.
+    auth_metadata:
+        The server's OAuth metadata, discovered live with ``--connect`` (AUTH01);
+        ``None`` when not connected or the server doesn't use MCP authorization.
     """
 
     include_dynamic: bool = False
@@ -66,6 +70,7 @@ class AnalysisContext:
     peers: tuple[tuple[MCPServerSpec, MCPManifest | None], ...] = ()
     baseline: dict[str, LockEntry] | None = None
     ai: AIConfig | None = None
+    auth_metadata: AuthMetadata | None = None
     _source_cache: dict[str, list[tuple[str, str]]] = field(default_factory=dict, init=False)
 
     def effective_manifest(self, spec: MCPServerSpec) -> MCPManifest | None:

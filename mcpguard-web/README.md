@@ -20,7 +20,7 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
-Other scripts: `npm run build`, `npm run test` (vitest, 174 tests), `npm run typecheck`,
+Other scripts: `npm run build`, `npm run test` (vitest, 189 tests), `npm run typecheck`,
 `npm run lint`.
 
 ## Using it
@@ -40,7 +40,9 @@ Other scripts: `npm run build`, `npm run test` (vitest, 174 tests), `npm run typ
 All config / manifest rules run client-side: **TP01** tool poisoning (full schema),
 **TP02** hidden content (ASCII smuggling, ANSI, BiDi), **TP03** tool shadowing, **FLOW01**
 toxic flows, **CAP01** excessive agency, **SEC01** secrets, **SUP01** pinning, **SUP02**
-vulnerable / malicious packages, **CFG01** launch config, **NET01** transport.
+vulnerable / malicious packages, **SUP03** publisher impersonation / typosquats, **CFG01**
+launch config, **NET01** transport, and the MCP 2026-07-28 surface: **HDR01**
+`x-mcp-header` misuse and **CACHE01** `ttlMs` / `cacheScope` cache hints.
 
 With the AI judge on, the server route adds **AI01** (semantic poisoning), **AI03**
 (purpose vs. capability), and AI-inferred toxic-flow roles. Source review (**CMD01**,

@@ -447,7 +447,8 @@ export function pyStr(value: unknown): string {
   return pyReprValue(value);
 }
 
-function pyReprValue(value: unknown): string {
+/** Python `repr()` of any JSON value (strings, numbers, bools, None, lists, dicts). */
+export function pyReprValue(value: unknown): string {
   if (typeof value === "string") return pyRepr(value);
   if (value === null || value === undefined) return "None";
   if (typeof value === "boolean") return value ? "True" : "False";

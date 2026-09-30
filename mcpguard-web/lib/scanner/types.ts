@@ -114,6 +114,10 @@ export interface MCPManifest {
   tools: MCPTool[];
   resources: MCPResource[];
   prompts: MCPPrompt[];
+  /** MCP 2026-07-28 list-result cache hint `ttlMs`, when served (an integer). */
+  ttlMs?: number | null;
+  /** MCP 2026-07-28 list-result cache hint `cacheScope` ("" when absent). */
+  cacheScope?: string;
 }
 
 export interface MCPServerSpec {

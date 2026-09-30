@@ -14,7 +14,8 @@
       "remediation": "An AI judge reads this text as an attempt to manipulate the assistant. Review it by hand; treat the server as untrusted until you do.",
       "mappings": [
         "OWASP-LLM01",
-        "MCP-TOOL-POISONING"
+        "MCP-TOOL-POISONING",
+        "OWASP-ASI01"
       ],
       "confidence": 0.95,
       "target": "tickets"
@@ -32,7 +33,8 @@
       "remediation": "An AI judge reads this text as an attempt to manipulate the assistant. Review it by hand; treat the server as untrusted until you do.",
       "mappings": [
         "OWASP-LLM01",
-        "MCP-TOOL-POISONING"
+        "MCP-TOOL-POISONING",
+        "OWASP-ASI01"
       ],
       "confidence": 0.95,
       "target": "tickets"
@@ -50,7 +52,9 @@
       "mappings": [
         "OWASP-LLM01",
         "MCP-TOXIC-FLOW",
-        "OWASP-AGENTIC-EXCESSIVE-AGENCY"
+        "OWASP-AGENTIC-EXCESSIVE-AGENCY",
+        "OWASP-ASI01",
+        "OWASP-ASI02"
       ],
       "confidence": 0.6,
       "target": "tickets"
@@ -68,7 +72,9 @@
       "mappings": [
         "OWASP-LLM01",
         "MCP-TOXIC-FLOW",
-        "OWASP-AGENTIC-EXCESSIVE-AGENCY"
+        "OWASP-AGENTIC-EXCESSIVE-AGENCY",
+        "OWASP-ASI01",
+        "OWASP-ASI02"
       ],
       "confidence": 0.6,
       "target": "tickets"
@@ -86,7 +92,8 @@
       "remediation": "To scan this server's code, add a \"source_path\" (or \"cwd\") pointing at its source to the config entry, or install the package locally (e.g. run the npx/uvx command once) and re-scan.",
       "mappings": [
         "MCP-STDIO-RCE",
-        "CWE-78"
+        "CWE-78",
+        "OWASP-ASI05"
       ],
       "confidence": 0.0,
       "target": "tickets"
@@ -104,7 +111,8 @@
       "remediation": "An AI judge reads this text as an attempt to manipulate the assistant. Review it by hand; treat the server as untrusted until you do.",
       "mappings": [
         "OWASP-LLM01",
-        "MCP-TOOL-POISONING"
+        "MCP-TOOL-POISONING",
+        "OWASP-ASI01"
       ],
       "confidence": 0.95,
       "target": "crm"
@@ -122,7 +130,8 @@
       "remediation": "To scan this server's code, add a \"source_path\" (or \"cwd\") pointing at its source to the config entry, or install the package locally (e.g. run the npx/uvx command once) and re-scan.",
       "mappings": [
         "MCP-STDIO-RCE",
-        "CWE-78"
+        "CWE-78",
+        "OWASP-ASI05"
       ],
       "confidence": 0.0,
       "target": "crm"
@@ -139,7 +148,8 @@
       "evidence": "marker: mismatch p=0.95; Time. MISMATCH: also uploads contacts.",
       "remediation": "The tool does something its name and the server's purpose don't suggest. Treat it as deceptive until reviewed.",
       "mappings": [
-        "OWASP-AGENTIC-EXCESSIVE-AGENCY"
+        "OWASP-AGENTIC-EXCESSIVE-AGENCY",
+        "OWASP-ASI02"
       ],
       "confidence": 0.95,
       "target": "partner"
@@ -156,7 +166,9 @@
       "evidence": "capabilities inferred: code execution, shell / command",
       "remediation": "Confirm this tool needs this power. Apply least privilege: scope filesystem/network access, sandbox execution, and require human approval for high-impact actions.",
       "mappings": [
-        "OWASP-AGENTIC-EXCESSIVE-AGENCY"
+        "OWASP-AGENTIC-EXCESSIVE-AGENCY",
+        "OWASP-ASI02",
+        "OWASP-ASI03"
       ],
       "confidence": 0.7,
       "target": "partner"
@@ -173,7 +185,8 @@
       "evidence": "marker: excessive p=0.95; purpose: server name: partner; tool: shell",
       "remediation": "This server doesn't need this power for what it says it does. Remove or disable the tool, or require approval for every call.",
       "mappings": [
-        "OWASP-AGENTIC-EXCESSIVE-AGENCY"
+        "OWASP-AGENTIC-EXCESSIVE-AGENCY",
+        "OWASP-ASI02"
       ],
       "confidence": 0.95,
       "target": "partner"
@@ -190,7 +203,9 @@
       "evidence": "capabilities inferred: arbitrary network",
       "remediation": "Confirm this tool needs this power. Apply least privilege: scope filesystem/network access, sandbox execution, and require human approval for high-impact actions.",
       "mappings": [
-        "OWASP-AGENTIC-EXCESSIVE-AGENCY"
+        "OWASP-AGENTIC-EXCESSIVE-AGENCY",
+        "OWASP-ASI02",
+        "OWASP-ASI03"
       ],
       "confidence": 0.7,
       "target": "partner"

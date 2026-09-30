@@ -1,0 +1,33 @@
+{
+  "mcpguard_policy": 1,
+  "_comment": "The support agent from 'Your Agent's Tools Are the Attack Surface': read the case, write the summary, and nothing a ticket says can widen that. Test it with: mcpguard policy-test support-agent.policy.json support-agent.scenarios.jsonl",
+  "default": "deny",
+  "fail": "deny",
+  "baseline": "support-agent.lock.json",
+  "canaries": ["MCPGUARD-CANARY-4821"],
+  "destinations": {
+    "allow": ["acme.com", "*.acme.com"],
+    "unknown": "deny"
+  },
+  "roles": {
+    "support/search_tickets": ["untrusted"],
+    "support/read_account": ["private"],
+    "support/export_all_customers": ["private"],
+    "mail/send_email": ["sink"]
+  },
+  "rules": [
+    {"id": "read-tickets", "tools": ["support/search_tickets"], "decision": "allow",
+     "reason": "Support staff may search tickets"},
+    {"id": "read-account", "tools": ["support/read_account"], "decision": "allow",
+     "reason": "Support staff may read one account at a time"},
+    {"id": "no-wildcard-account", "tools": ["support/read_account"],
+     "when": {"arg": "account_id", "matches": "(?i)[*%]|^\\s*(all|any|everyone)\\s*$"}, "decision": "deny",
+     "reason": "Reading every account is an export, not a lookup"},
+    {"id": "no-bulk-export", "tools": ["support/export_*"], "except_users": ["data-team"],
+     "decision": "deny", "reason": "Bulk export is outside a support user's authority"},
+    {"id": "data-team-export", "tools": ["support/export_*"], "users": ["data-team"],
+     "decision": "ask", "reason": "Exports by the data team need a named approver"},
+    {"id": "confirm-email", "tools": ["mail/send_email"], "decision": "ask",
+     "reason": "Outbound email: confirm the recipient and the contents"}
+  ]
+}

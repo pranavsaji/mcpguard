@@ -8,7 +8,7 @@ optionally filtered to the static set (the default, hermetic mode).
 from __future__ import annotations
 
 # Dynamic rules live in the `dynamic` package; importing registers them too.
-from ..dynamic import drift  # noqa: E402,F401
+from ..dynamic import authorization, drift  # noqa: E402,F401
 
 # Import side-effect: each module registers its rule(s) on import.
 from . import (  # noqa: E402,F401  (imported for registration side-effects)
@@ -16,10 +16,13 @@ from . import (  # noqa: E402,F401  (imported for registration side-effects)
     ai_purpose,
     ai_source,
     command_injection,
+    egress,
     excessive_agency,
     hidden_content,
     launch_config,
     pinning,
+    protocol,
+    provenance,
     secrets,
     shadowing,
     tool_poisoning,

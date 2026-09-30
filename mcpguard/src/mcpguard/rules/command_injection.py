@@ -47,7 +47,7 @@ class CommandInjectionRule(Rule):
     title = "Command-execution sink in server source"
     category = Category.RCE_SURFACE
     default_severity = Severity.HIGH
-    mappings = ("MCP-STDIO-RCE", "CWE-78")
+    mappings = ("MCP-STDIO-RCE", "CWE-78", "OWASP-ASI05")
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
         if not target.source_path:

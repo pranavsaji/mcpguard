@@ -50,7 +50,7 @@ class VulnerablePackageRule(Rule):
     title = "MCP server package has a known vulnerability"
     category = Category.VULNERABLE_COMPONENT
     default_severity = Severity.HIGH
-    mappings = ("CWE-1395", "MCP-SUPPLY-CHAIN")
+    mappings = ("CWE-1395", "MCP-SUPPLY-CHAIN", "OWASP-ASI04")
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
         yield from self._iocs(target)

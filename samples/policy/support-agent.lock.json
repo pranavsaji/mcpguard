@@ -1,0 +1,127 @@
+{
+  "generated_by": "mcpguard 0.2.0",
+  "mcpguard_lock": 1,
+  "servers": {
+    "mail": {
+      "launch": "npx -y @acme/mail-mcp@1.2.0",
+      "manifest": {
+        "instructions": "",
+        "prompts": [],
+        "resources": [],
+        "tools": [
+          {
+            "annotations": {
+              "openWorldHint": true
+            },
+            "description": "Send an email.",
+            "inputSchema": {
+              "properties": {
+                "body": {
+                  "maxLength": 20000,
+                  "type": "string"
+                },
+                "subject": {
+                  "maxLength": 200,
+                  "type": "string"
+                },
+                "to": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "to",
+                "subject",
+                "body"
+              ],
+              "type": "object"
+            },
+            "name": "send_email"
+          }
+        ]
+      },
+      "manifest_sha256": "d86b79eef9815e026c41ace30f18f0fc2eccc093fd992a4210bd9f6e2794a5a9",
+      "package": "@acme/mail-mcp",
+      "tool_sha256": {
+        "send_email": "9c111584a23a7b4d3065f487acd08ae894effda83301a842635079bb6b0f8d51"
+      },
+      "version": "1.2.0"
+    },
+    "support": {
+      "launch": "npx -y @acme/support-mcp@2.4.1",
+      "manifest": {
+        "instructions": "",
+        "prompts": [],
+        "resources": [],
+        "tools": [
+          {
+            "annotations": {
+              "readOnlyHint": true
+            },
+            "description": "Search support tickets by customer or keyword.",
+            "inputSchema": {
+              "properties": {
+                "limit": {
+                  "maximum": 50,
+                  "minimum": 1,
+                  "type": "integer"
+                },
+                "query": {
+                  "maxLength": 200,
+                  "type": "string"
+                }
+              },
+              "required": [
+                "query"
+              ],
+              "type": "object"
+            },
+            "name": "search_tickets"
+          },
+          {
+            "annotations": {
+              "readOnlyHint": true
+            },
+            "description": "Read one customer account record.",
+            "inputSchema": {
+              "properties": {
+                "account_id": {
+                  "type": "string",
+                  "x-mcp-header": "Account"
+                }
+              },
+              "required": [
+                "account_id"
+              ],
+              "type": "object"
+            },
+            "name": "read_account"
+          },
+          {
+            "description": "Export every customer record as CSV.",
+            "inputSchema": {
+              "properties": {
+                "format": {
+                  "enum": [
+                    "csv",
+                    "json"
+                  ],
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "name": "export_all_customers"
+          }
+        ]
+      },
+      "manifest_sha256": "eddc2adf4163dc431b53315c96f5d78a28587706eda39fe3ab4b30c3c9eceab8",
+      "package": "@acme/support-mcp",
+      "tool_sha256": {
+        "export_all_customers": "91a9601cfb865ceb273f2c40cb395424ab00441c3545159e74d9b8cfedb43573",
+        "read_account": "abf56f814bb9ef494f5eae2f2819f22161f4f55e72ab93db5eab786f52ad1bd8",
+        "search_tickets": "9faa0009e085d4f519daf7b03fd50fd34abbbca9a70eec4a027d19795dd3b910"
+      },
+      "version": "2.4.1"
+    }
+  }
+}

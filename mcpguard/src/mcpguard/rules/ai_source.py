@@ -55,7 +55,7 @@ class AISourceReviewRule(Rule):
     title = "AI judge: tool input reaches a dangerous sink in server source"
     category = Category.RCE_SURFACE
     default_severity = Severity.HIGH
-    mappings = ("MCP-STDIO-RCE", "CWE-78", "CWE-22", "CWE-89", "CWE-918")
+    mappings = ("MCP-STDIO-RCE", "CWE-78", "CWE-22", "CWE-89", "CWE-918", "OWASP-ASI05")
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
         ai = ctx.ai

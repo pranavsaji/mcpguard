@@ -4,7 +4,7 @@
 
 ![version](https://img.shields.io/badge/version-0.2.0-blue)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
-![tests](https://img.shields.io/badge/tests-698%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-960%20passing-brightgreen)
 ![red team](https://img.shields.io/badge/red%20team-100%25%20detected%20(122%20cases)-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey)
 
@@ -15,15 +15,21 @@ privileges. There is no `npm audit` for that decision.
 
 MCPGuard is that missing check. Point it at an MCP client config, a tool manifest, or a
 live server and it produces a graded, framework-mapped security report with a CI exit
-code. It works in three layers:
+code. It works in four layers:
 
-1. **Deterministic rules** (13, zero-dependency) — tool poisoning, hidden text, tool
-   shadowing, toxic flows, secrets, supply chain, dangerous launch configs, rug pulls.
+1. **Deterministic rules** (18, zero-dependency) — tool poisoning, hidden text, tool
+   shadowing, toxic flows, secrets, supply chain and publisher impersonation, dangerous
+   launch configs, outbound destinations in server code, OAuth metadata, the MCP
+   2026-07-28 header and cache surface, rug pulls.
 2. **An optional AI judge** (Jev and/or Claude) — catches what no keyword can:
    paraphrased, translated, and obfuscated attacks, injection flaws in server source, and
    tools that exceed their server's purpose.
-3. **A runtime guard** — scans what tools *return*, where indirect prompt injection
+3. **A runtime output guard** — scans what tools *return*, where indirect prompt injection
    lives; plugs straight into Claude Code as a hook.
+4. **A runtime policy gate** — decides on every tool call *before* it runs: who the user
+   is, what the operation is, which records, where the data goes, and what this session has
+   already read. Assume an injection eventually gets through; the gate keeps the *effect*
+   inside the user's authority.
 
 ```text
 $ mcpguard scan samples/05-tool-poisoning-manifest.json
@@ -58,6 +64,7 @@ Summary: 1 target(s), 14 finding(s) — 5 critical, 8 high, 1 medium — FAIL (g
 - [Usage](#usage)
 - [AI judge layer](#ai-judge-layer)
 - [Runtime guard and the Claude Code hook](#runtime-guard-and-the-claude-code-hook)
+- [Runtime policy gate: decide before the call runs](#runtime-policy-gate-decide-before-the-call-runs)
 - [Rug-pull protection: the lockfile](#rug-pull-protection-the-lockfile)
 - [Web dashboard](#web-dashboard)
 - [CI integration](#ci-integration)
@@ -87,6 +94,9 @@ echo "TYPESAFE_API_KEY=..." >> .env         # Jev (TypeSafe AI)
 mcpguard scan .mcp.json --ai auto
 
 # 4. (Optional) guard every MCP tool result at run time — see the Claude Code hook below
+
+# 5. (Optional) put a policy in front of every tool call, and test it with hostile scenarios
+mcpguard policy-test samples/policy/support-agent.policy.json samples/policy/support-agent.scenarios.jsonl
 ```
 
 From a clone instead:
@@ -139,17 +149,18 @@ npm/PyPI packages confirmed in February 2026 alone; and 29M new hardcoded secret
 | SAST / linters | Analyze code. MCP's primary payload is *prose in a JSON manifest*. |
 | Secret scanners | Scan repos. MCP client configs live in `~/Library/Application Support/…`, outside version control. |
 | SCA / dependency audit | Reads lockfiles. `npx -y pkg` has no lockfile — resolution happens at agent launch. |
-| LLM guardrails / prompt firewalls | Filter the conversation. Poisoning is injected at *tool registration*, before any user turn. |
+| LLM guardrails / prompt firewalls | Filter the conversation. Poisoning is injected at *tool registration*, before any user turn — and a filter that misses one injection has no say over what the agent then *does*. |
+| Client approval prompts | "Approve tool call?" shows a tool name, not the recipient or the data leaving, and knows nothing about what the session already read. |
 
 MCPGuard occupies the gap between "someone added a server to the config" and "the agent
-trusts it" — and, with the runtime guard, between "a tool returned data" and "the model
-acted on it."
+trusts it"; with the runtime guard, between "a tool returned data" and "the model acted on
+it"; and with the policy gate, between "the model proposed a call" and "the call ran".
 
 ---
 
 ## What it detects
 
-### Deterministic rules (always on, no network)
+### Deterministic rules (no network, except AUTH01 under `--connect`)
 
 | ID | Severity | Detects | Maps to |
 |----|----------|---------|---------|
@@ -162,10 +173,15 @@ acted on it."
 | **SEC01** | High–Critical | **Plaintext secrets** in `env`, HTTP `headers`, launch `args`, and the server `url`. 19 vendor formats (OpenAI incl. `sk-proj-`, Anthropic, GitHub fine-grained PATs, AWS, Stripe, Hugging Face, database URLs with passwords, …) plus name heuristics; `${VAR}` references and placeholders are ignored; evidence is redacted. | CWE-798 |
 | **SUP01** | Low–High | **Supply chain.** Unpinned `npx`/`bunx`/`uvx`/`pipx` launches, container images not pinned by digest, fetch-and-run of code from a URL or git ref (a bridge URL like `npx mcp-remote https://…` is correctly *not* flagged). | SLSA |
 | **SUP02** | Low–Critical | **Known-vulnerable, malicious, or archived packages** — 33 source-cited offline advisories (`mcp-remote` CVE-2025-6514, MCP Inspector CVE-2025-49596, `server-filesystem` CVE-2025-53109/53110, `mcp-server-git` CVE-2025-68143/4/5, `postmark-mcp` malware, …) plus IOCs from documented campaigns (Deadbugz). | CWE-1395 |
+| **SUP03** | Low–High | **Publisher provenance** — *who published it?* npm scopes imitating a trusted publisher (`@model-context-protocol`, homoglyphs), lookalikes and one-edit typosquats of well-known servers, and MCP packages named after a vendor (Postmark, Stripe, GitHub…) that aren't under the vendor's scope — the `postmark-mcp` shape, caught before an advisory exists. | OWASP ASI04 |
 | **CFG01** | Medium–High | **Dangerous launch config.** `LD_PRELOAD` / `DYLD_INSERT_LIBRARIES` / `NODE_OPTIONS=--require`, TLS verification off, `ANTHROPIC_BASE_URL` redirects, `--extra-index-url` (dependency confusion), `sudo`, `--privileged` / Docker socket / host-root containers, filesystem servers rooted at `/` or `~`, `0.0.0.0` binds. | CWE-250 |
 | **NET01** | Low–High | **Insecure transport** — plaintext `http://` to a remote server (directly or via `mcp-remote`); deprecated HTTP+SSE. | CWE-319 |
+| **HDR01** | Medium–High | **MCP 2026-07-28 `x-mcp-header`** (SEP-2243): designations clients must reject (non-token or duplicate names, `number` / untyped parameters, not reachable through `properties`), CR/LF in a header name (request splitting: high), and credential parameters mirrored into `Mcp-Param-*` headers, where every proxy and access log keeps them. | OWASP ASI03 · CWE-113 |
+| **CACHE01** | Low–Medium | **MCP 2026-07-28 cache hints** (SEP-2549): `cacheScope: "public"` on an authenticated server's list (shared caches can serve one user's catalog to another, and a poisoned copy outlives the fix); `ttlMs` over 24h. A cached list is not a reviewed list. | OWASP ASI04 |
+| **EGR01** | Info–High | **Where the server's own code sends data** — which no tool-call policy sees. Hard-coded BCC recipients (the `postmark-mcp` backdoor), request-collector and tunnel services, Discord / Telegram webhooks, public IP literals: high. Otherwise an inventory of every outbound host, pinned by `mcpguard lock`. | OWASP ASI04 · CWE-506 |
+| **AUTH01** | Info–Critical | *(`--connect`)* **OAuth metadata** of remote servers (RFC 9728 / 8414): shell metacharacters or `javascript:` / `file:` in an endpoint the client launches (the `mcp-remote` CVE-2025-6514 class), plaintext endpoints, issuer or resource mismatch (mix-up), private-network endpoints on a public server, no PKCE S256, no RFC 9207 `iss` (MCP 2026-07-28), DCR-only registration, broad scopes. Discovery never follows redirects or fetches private / non-https issuers. | OWASP ASI03 |
 | **MAN01** | Medium–Critical | **Rug pull / manifest drift** against the reviewed lockfile: any tool added, removed, or changed in *any* field (description, schemas, title, annotations), instructions, prompts, resources. | MCP rug pull |
-| **MAN02** | Medium–High | **Launch drift** against the lockfile: changed command / package / version / image / URL / env names, and servers never reviewed. | MCP rug pull |
+| **MAN02** | Medium–High | **Launch and reach drift** against the lockfile: changed command / package / version / image / URL / env names, servers never reviewed, a **new outbound host** in the source, a **changed authorization server**, and **wider OAuth scopes** than reviewed. | MCP rug pull |
 
 ### AI judge rules (opt-in with `--ai`)
 
@@ -183,7 +199,25 @@ acted on it."
 | **IPI01** | Low–Critical | Injection, exfiltration, encoded payloads, ASCII smuggling, and deceptive terminal escapes in **tool outputs** — where indirect prompt injection and "advanced tool poisoning" actually arrive. | OWASP LLM01 |
 | **IPI02** | High–Critical | *(with `--ai`)* Semantic indirect injection in tool outputs. | OWASP LLM01 |
 
-Every finding carries evidence, a remediation, framework mappings, and a confidence
+### Runtime policy gate (`check-call`)
+
+Every proposed tool call gets `allow`, `ask`, or `deny` *before* it runs — from policy
+rules on tool, user, role, and arguments, plus these built-in checks (each configurable):
+
+| Check | Default | Fires when |
+|---|---|---|
+| `canary` | deny | an argument carries a planted canary value — an exfiltration path is live |
+| `secrets` | deny | an argument carries a live credential (SEC01's vendor formats) |
+| `sensitive_paths` | deny | an argument names `~/.ssh`, `.env`, cloud credentials, `mcp.json`… |
+| `destinations` | ask | a URL, email, or host outside `destinations.allow` |
+| `baseline` | deny | the tool or its arguments differ from the reviewed lockfile — unknown tool, undeclared parameter (a rug-pulled `telemetry` field), out-of-range value |
+| `headers` | deny | `Mcp-Method` / `Mcp-Name` / `Mcp-Param-*` disagree with the JSON-RPC body (MCP 2026-07-28 gateway desync) |
+| `trifecta` | ask | a send, after this session read untrusted content *and* private data |
+| `tainted_sink` | deny | a send, after a tool output in this session carried injected instructions |
+| `duplicate` | ask | the same side-effecting call already went through — a retry would repeat it |
+
+Every finding carries evidence, a remediation, framework mappings (CWE, OWASP LLM, and the
+OWASP Top 10 for Agentic Applications, `OWASP-ASI01`–`ASI05`), and a confidence
 score. `AI00` (judge degraded / unavailable) and `CONNECT` (live connection failed) are
 reported as findings too — a check that couldn't run is never a silent pass.
 
@@ -191,20 +225,45 @@ reported as findings too — a check that couldn't run is never a silent pass.
 
 | Attack class | Deterministic | AI judge | Runtime |
 |---|---|---|---|
-| Tool poisoning (Invariant) | TP01, TP02 | AI01 | — |
+| Tool poisoning (Invariant) | TP01, TP02 | AI01 | `canary` |
 | Full-schema poisoning (CyberArk) | TP01 (recursive schema walk) | AI01 | — |
-| Paraphrased / multilingual / obfuscated injection | — | AI01 | IPI02 |
-| Advanced tool poisoning (payload in tool results / errors) | — | — | IPI01, IPI02 |
-| Indirect prompt injection (GitHub MCP, Supabase MCP) | FLOW01 (exposure) | FLOW01 roles | IPI01, IPI02 |
-| Rug pull / silent redefinition | MAN01, MAN02, SUP01 | MAN01 semantic | — |
+| Paraphrased / multilingual / obfuscated injection | — | AI01 | IPI02; the gate blocks the effect regardless |
+| Advanced tool poisoning (payload in tool results / errors) | — | — | IPI01, IPI02 → `tainted_sink` |
+| Indirect prompt injection (GitHub MCP, Supabase MCP) | FLOW01 (exposure) | FLOW01 roles | IPI01, IPI02; `trifecta`, `destinations`, policy rules |
+| Rug pull / silent redefinition | MAN01, MAN02, SUP01, CACHE01 | MAN01 semantic | `baseline` (reviewed-schema pinning) |
 | Tool shadowing, name collisions, homoglyphs, preference manipulation | TP03 | AI01 | — |
 | Line jumping & ANSI deception (Trail of Bits) | TP01, TP02 | — | IPI01 |
 | ASCII / variation-selector smuggling | TP02 | — | IPI01 |
 | Malicious / vulnerable MCP packages | SUP02 | — | — |
+| Brand impersonation / typosquats (`postmark-mcp`) | SUP03 (before an advisory), SUP02 (after) | — | — |
+| Malicious implementation exfiltrating from its own process | EGR01, MAN02 (new outbound host) | AI02 | OS sandbox (out of scope) |
+| Client mishandling hostile auth metadata (`mcp-remote` CVE-2025-6514) | AUTH01, SUP02 | — | — |
+| Authorization-server mix-up, missing PKCE / `iss` (MCP 2026-07-28) | AUTH01, MAN02 (issuer / scope drift) | — | — |
+| Gateway header / body desync (MCP 2026-07-28 `Mcp-Name`, `Mcp-Param-*`) | HDR01 | — | `headers` |
 | Injection flaws in server code (command, path, SQL, SSRF) | CMD01 | AI02 | — |
-| Excessive agency / purpose mismatch | CAP01 | AI03 | — |
+| Excessive agency / purpose mismatch | CAP01 | AI03 | policy rules, `users`, `roles` |
 | Local server compromise (dangerous launch config) | CFG01 | — | — |
-| Credential exposure, token theft / MITM | SEC01, NET01 | — | — |
+| Credential exposure, token theft / MITM | SEC01, NET01, HDR01 | — | `secrets`, `sensitive_paths` |
+
+### From the talk to the tool
+
+*Your Agent's Tools Are the Attack Surface* (LLMday San Francisco, October 2026), slide by slide:
+
+| Slide | Claim | MCPGuard |
+|---|---|---|
+| 2, 11, 13 | The boundary follows the action: check user, operation, record, destination, and sensitivity *before* the call | `check-call` rules (`users`, `roles`, `when` on arguments), destination allow-list, `default: deny` |
+| 3 | Knowing a tool exists is not permission | `users` / `except_users`; the `identity-matters` scenario |
+| 4, 5 | Hostile text in descriptions and schemas; the `sidenote` channel; test with a canary | TP01, TP02, AI01; policy `canaries` |
+| 4, 7 | Hostile text in tool results — assume one gets through | IPI01 / IPI02 → taint → `tainted_sink`; the `paraphrased-injection` scenario slips past the guard and is still blocked |
+| 4, 9, 13 | The model makes the right call; the server misbehaves | EGR01, CMD01, AI02, SUP02 / SUP03 (and an OS sandbox) |
+| 6 | Approval outlives the tool: snapshot definitions and permissions, pin identity | `mcpguard lock` (+ outbound hosts, OAuth issuers and scopes), MAN01 / MAN02, `baseline` check |
+| 8 | The lethal trifecta; "what's the worst the current credentials allow?" | FLOW01 (config), `trifecta` (session) |
+| 9 | Ask which boundary failed | model choice: TP / IPI · server behavior: EGR01, SUP02 / 03 · client handling: AUTH01, SUP02 |
+| 10 | July 2026: stateless requests, `Mcp-Method` / `Mcp-Name`, list cache hints, auth hardening | `headers`, HDR01, CACHE01, AUTH01 (`iss`, issuer binding, CIMD) |
+| 11 | A confirmation must show the recipient and the actual contents | `ask` carries destination and a data preview, credentials masked |
+| 12 | Five pre-install questions; `readOnlyHint` is only a claim | SUP03, SEC01 / AUTH01 scopes, EGR01, TP01 / AI01, `lock`; CAP01 deceptive annotations |
+| 14 | Inventory, audit, drift signals, hostile full-chain tests, fail safe | `--audit-log` (no argument values), MAN02, `policy-test`, `fail: deny` |
+| 15 | Deterministic code for yes/no checks — "would a retry send twice?" | the gate is code, not a model; `duplicate` |
 
 > **Design bias: precision over recall.** A CI gate that cries wolf gets removed within a
 > sprint. Placeholders are suppressed, secrets match vendor formats before name
@@ -271,6 +330,10 @@ mcpguard scan config.json --connect --baseline mcpguard.lock.json
 mcpguard check-output tool-result.json             # scan a tool result
 mcpguard check-output --hook --ai jev              # Claude Code PostToolUse hook
 
+mcpguard check-call call.json --policy p.json      # allow / ask / deny (exit 0 / 1 / 1)
+mcpguard check-call --hook --policy p.json         # Claude Code PreToolUse hook
+mcpguard policy-test p.json scenarios.jsonl        # exit 1 if a scenario's decision drifts
+
 mcpguard redteam [--ai jev]                        # detection / false-positive report
 ```
 
@@ -290,6 +353,11 @@ Add `"source_path"` (or `"cwd"`) to a server entry to point CMD01 / AI02 at its 
 | `0` | Clean — no finding at or above the gate |
 | `1` | Gate failed — a finding met `--min-severity` (default `high`); for `redteam`, a regression or a quality gate miss |
 | `2` | Usage or IO error — unreadable file, bad JSON, unknown config shape, missing AI credentials |
+
+`check-call` exits `0` on allow and `1` on ask or deny (`2` when it can't read its input or
+policy); `policy-test` exits `1` when any scenario's decision differs from its expectation.
+In `--hook` mode both hooks always exit `0` and answer in the Claude Code hook protocol —
+`check-call` with a deny when it can't decide.
 
 A broken config must not read as a security failure, and vice versa.
 
@@ -423,7 +491,110 @@ rules. `--ai-triage` lets a *confident* benign verdict (every answer ≤ 0.05) d
 keyword-only hit to LOW; exfiltration, encoded, and smuggled content are never triaged.
 
 Outside Claude Code, pipe any tool result in: `… | mcpguard check-output` exits `1` when a
-finding meets `--min-severity`.
+finding meets `--min-severity`. In hook mode a hit is also recorded as *taint* on the
+session (in `~/.mcpguard/sessions`, or `--state-dir` / `MCPGUARD_STATE_DIR`; `--no-state`
+turns it off), which the policy gate reads to refuse a later send.
+
+---
+
+## Runtime policy gate: decide before the call runs
+
+Scanning finds servers that *could* be abused and the output guard flags injected text,
+but a model that reads hostile text will sooner or later propose the wrong call. Whether
+that call runs is the application's decision, and it has to be made before the tool
+receives the data or the credential — asking a model afterward is too late, and a model's
+explanation that a call is "required" is not authorization. `mcpguard check-call` makes that
+decision deterministically from a JSON policy:
+
+```json
+{
+  "mcpguard_policy": 1,
+  "default": "deny",
+  "fail": "deny",
+  "baseline": "mcpguard.lock.json",
+  "canaries": ["MCPGUARD-CANARY-4821"],
+  "destinations": {"allow": ["acme.com", "*.acme.com"], "unknown": "deny"},
+  "roles": {"support/search_tickets": ["untrusted"], "support/read_account": ["private"],
+            "mail/send_email": ["sink"]},
+  "rules": [
+    {"id": "read-tickets", "tools": ["support/search_tickets"], "decision": "allow"},
+    {"id": "read-account", "tools": ["support/read_account"], "decision": "allow"},
+    {"id": "no-wildcard", "tools": ["support/read_account"],
+     "when": {"arg": "account_id", "matches": "(?i)[*%]|^\\s*(all|any)\\s*$"}, "decision": "deny"},
+    {"id": "no-bulk-export", "tools": ["support/export_*"], "except_users": ["data-team"],
+     "decision": "deny", "reason": "Bulk export is outside a support user's authority"},
+    {"id": "confirm-email", "tools": ["mail/send_email"], "decision": "ask"}
+  ]
+}
+```
+
+- **Rules** match `server/tool` globs, optionally `users` / `except_users`, `roles`
+  (`untrusted`, `private`, `sink`, `exec` — declared in `roles`, else inferred from the tool
+  name like FLOW01), and `when` conditions on arguments (`equals`, `in`, `not_in`, `matches`,
+  `gt`/`lt`, `exists`; `"arg": "*"` means any string anywhere). **The most restrictive
+  decision wins** — an allow rule can never cancel a deny from another rule or check.
+- **`ask` shows what a person needs to decide** — the destination and the data that would
+  leave, credentials masked — not "Approve tool call?".
+- **It only restricts.** In hook mode an `allow` prints nothing, so Claude Code's own
+  permission flow still applies; the gate never auto-approves on a server's `readOnlyHint`.
+- **It fails closed.** A missing or malformed policy, an unreadable event, corrupt session
+  state, an internal error, or no decision within `--timeout` (default 10s — a server-authored
+  schema `pattern` can't stall the hook into the client's "proceed") is a `deny` (`fail` in
+  the policy; `--fail-open` must be explicit).
+- **Arguments are read defensively.** Keys are scanned as well as values; nesting past 32
+  levels fails closed; a URL whose host parsers could disagree on (backslashes, embedded
+  credentials, control characters) or a destination-shaped argument (`to`, `url`, `host`,
+  `webhook`…) that yields no readable host counts as an *unknown* destination. An `allow`
+  rule's conditions must hold for *every* value (one approved recipient can't carry another),
+  and the operator's `--user` / `$MCPGUARD_USER` outranks any identity in the payload.
+- **Session memory** (`~/.mcpguard/sessions`, one file per session, hashed ids) drives the
+  `trifecta`, `tainted_sink`, and `duplicate` checks across separate hook processes.
+- **Audit** (`--audit-log` / `"audit_log"`): one JSON line per decision — user, session,
+  tool, decision, value-free reasons, destinations as `scheme://host` or the address,
+  resource ids (credentials masked), argument *names* and a SHA-256 of the arguments.
+  Argument values are never written, and a canary value is never echoed.
+- **Gateways**: pass a JSON-RPC request with the HTTP `headers` it arrived with; the gate
+  checks `Mcp-Method`, `Mcp-Name`, and `Mcp-Param-*` against the body (base64 sentinel
+  decoded), so a router and the server can't act on different calls.
+
+Both hooks together (`.claude/settings.json`) — the output guard records taint, so a send
+proposed after a poisoned result is refused:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [{"matcher": "mcp__.*", "hooks": [{"type": "command",
+      "command": "mcpguard check-call --hook --policy mcpguard.policy.json --audit-log .mcpguard/audit.jsonl"}]}],
+    "PostToolUse": [{"matcher": "mcp__.*", "hooks": [{"type": "command",
+      "command": "mcpguard check-output --hook"}]}]
+  }
+}
+```
+
+### Test the whole chain: `policy-test`
+
+"Did the model say no?" is the wrong test; the question is whether a forbidden read,
+write, or send would *execute*. A scenario is a sequence of proposed calls (with the
+decision each must get) and tool outputs (scanned by the guard, tainting the session as the
+hook would). `mcpguard policy-test` exits `1` when any decision differs — a weaker one
+("forbidden call would run") or a stronger one ("over-blocked") — so it works as a
+regression test while models, prompts, and policies change:
+
+```text
+$ mcpguard policy-test samples/policy/support-agent.policy.json samples/policy/support-agent.scenarios.jsonl
+● poisoned-ticket
+  ok   step 1: support/search_tickets: expected allow, got allow
+  ok   step 2: support/search_tickets (output): expected tainted, got tainted
+  ok   step 3: support/export_all_customers: expected deny, got deny
+  ok   step 4: mail/send_email: expected deny, got deny
+  ...
+Summary: 20/20 steps as expected; 0 forbidden call(s) would execute, 0 other decision(s) weaker than expected — PASS
+```
+
+The bundled scenarios are the talk's support agent: the poisoned ticket, a paraphrased
+injection the guard misses (still blocked), a confirmation to an approved colleague and its
+retry, a rug-pulled `telemetry` field, a canary, an unreviewed tool, a gateway header
+desync, and the same export allowed for one user and denied for another.
 
 ---
 
@@ -440,6 +611,12 @@ to your config; every `scan --baseline` then reports:
   `--ai`, a change that *adds* behavior is escalated to critical.
 - **MAN02** — a changed command, package, version, image, URL, or env name, and servers
   that were never reviewed.
+
+It also pins what each server can *reach*: the outbound hosts its source contacts (when
+the source is on disk — EGR01's inventory) and, with `--connect`, the OAuth issuers and
+scopes it advertises. MAN02 then flags a new outbound host, a changed authorization server
+(credentials are bound to their issuer — MCP 2026-07-28), or a wider scope set. The policy
+gate reads the same lockfile to hold every call to the reviewed schemas.
 
 The lockfile is deterministic (sorted keys, no timestamps) so changes review as a clean
 diff, and a hand-edited baseline fails its own integrity hash.
@@ -462,6 +639,9 @@ npm run dev        # http://localhost:3000
 - **AI judge toggle.** Keys can't live in a browser, so the toggle posts to a server route
   (`POST /api/ai-scan`) that runs the deterministic scan plus AI01, AI03, and AI-inferred
   toxic flows. The panel says so when it's on. AI02 and MAN01 need the CLI.
+- **What stays in the CLI.** Rules that read server source (CMD01, EGR01), connect to live
+  servers (AUTH01), or compare against a lockfile (MAN01, MAN02), and the runtime guard and
+  policy gate. Everything else — including SUP03, HDR01, and CACHE01 — runs in the browser.
 - **Registry browser.** `GET /api/registry` proxies the official MCP registry and
   synthesizes a realistic config per server, so you can scan real public servers in two
   clicks.
@@ -505,13 +685,17 @@ jobs:
       - run: pip install "mcpguard @ git+https://github.com/pranavsaji/mcpguard#subdirectory=mcpguard"
       # Fails the job (exit 1) on any high/critical finding, or on drift from the reviewed lockfile
       - run: mcpguard scan .mcp.json --baseline mcpguard.lock.json --min-severity high
+      # The runtime policy, as a regression test: fails if a forbidden call would now run
+      - run: mcpguard policy-test mcpguard.policy.json policy-scenarios.jsonl
       # Optional semantic layer — keep the key in repository secrets
       - run: mcpguard scan .mcp.json --ai jev --ai-cache .mcpguard-cache/ai.json
         env:
           TYPESAFE_API_KEY: ${{ secrets.TYPESAFE_API_KEY }}
 ```
 
-The gate runs at config-change time — where remediation is a one-line edit, not an incident.
+The gate runs at config-change time — where remediation is a one-line edit, not an
+incident — and `policy-test` keeps the runtime policy honest as tools, prompts, and models
+change.
 
 ---
 
@@ -529,6 +713,9 @@ The gate runs at config-change time — where remediation is a one-line edit, no
 | `MCPGUARD_ENV_FILE` | CLI | Explicit `.env` path (default: nearest `.env`, or `mcpguard/.env`, up to 3 levels up) |
 | `MCPGUARD_AI_ROUTE_TOKEN` | Web | Bearer token required by `/api/ai-scan` |
 | `MCPGUARD_AI_ROUTE_PUBLIC` | Web | `1` to allow `/api/ai-scan` without a token in production (not recommended) |
+| `MCPGUARD_POLICY` | `check-call` | Policy file when `--policy` isn't given |
+| `MCPGUARD_USER` | `check-call` | The end user a call is made for, when the event doesn't carry one |
+| `MCPGUARD_STATE_DIR` | `check-call`, `check-output --hook` | Session state directory shared by both hooks (default `~/.mcpguard/sessions`) |
 
 Copy `mcpguard/.env.example` to `.env` to start. `.env` files are gitignored.
 
@@ -549,7 +736,8 @@ Copy `mcpguard/.env.example` to `.env` to start. `.env` files are gitignored.
                                                                 ▼
                         ┌──────────── Rule registry ────────────┐
                         │ TP01 TP02 TP03 FLOW01 CAP01 CMD01     │
-                        │ SEC01 SUP01 SUP02 CFG01 NET01         │
+                        │ SEC01 SUP01 SUP02 SUP03 CFG01 NET01   │
+                        │ HDR01 CACHE01 EGR01 AUTH01 (--connect)│
                         │ MAN01 MAN02 │ AI01 AI02 AI03 (--ai)   │──▶ Jev / Claude judges
                         └───────────────────┬───────────────────┘   (ensemble, cache,
                                             ▼                        circuit breaker)
@@ -560,7 +748,11 @@ Copy `mcpguard/.env.example` to `.env` to start. `.env` files are gitignored.
                    text reporter                        JSON reporter ──▶ CI gate (exit 0/1/2)
 
   Tool output ─▶ guard (IPI01 / IPI02) ─▶ Claude Code hook: decision "block" + reason
+                        └──▶ session taint ─┐
+  Proposed call ─▶ policy gate (check-call) ┴▶ allow (silent) / ask / deny + audit line
+                   (policy · lockfile · session)
   cases.jsonl ─▶ redteam runner ─▶ detection & false-positive rates per layer
+  scenarios.jsonl ─▶ policy-test ─▶ "did a forbidden call execute?"
 ```
 
 ### Module layout
@@ -575,12 +767,19 @@ mcpguard/src/mcpguard/
   context.py          # per-scan state: source IO, live manifest, peers, baseline, AI config
   lockfile.py         # reviewed-baseline lockfile (tool pinning)
   guard.py            # IPI01 / IPI02 output guard + Claude Code hook protocol
+  policy.py           # runtime policy gate (check-call): rules, built-in checks, audit
+  argcheck.py         # tool arguments vs the *reviewed* input schema
+  session.py          # per-session memory for the gate (trifecta, taint, duplicates)
+  policytest.py       # policy-test scenario runner
+  egress.py           # outbound destinations in server source (EGR01, lockfile pins)
   launchers.py  source_resolver.py  source_mask.py   # package-launch parsing, source lookup
   rules/              # one module per detector; self-registering
     tool_poisoning  hidden_content  shadowing  toxic_flow  excessive_agency
     command_injection  secrets  pinning  vulnerable_packages  launch_config  transport
+    provenance (SUP03)  protocol (HDR01, CACHE01)  egress (EGR01)
     ai_judge  ai_source  ai_purpose
   dynamic/            # connector.py (STDIO / HTTP / SSE via MCP SDK) · drift.py (MAN01, MAN02)
+                      # oauth.py (RFC 9728 / 8414 discovery + checks) · authorization.py (AUTH01)
   ai/                 # base.py (questions, ensemble, cache) · jev.py · claude.py
   redteam/            # runner + cases.jsonl (122 cases)
   reporting/          # text (ANSI-safe) and JSON reporters
@@ -617,6 +816,11 @@ mcpguard-web/
 6. **Two engines, one contract.** The browser engine is held to the Python engine's
    output exactly — rules and AI layer — by shared fixtures in both test suites, with
    regexes translated so Unicode `\w`/`\b`, code-point counting, and case folding match.
+7. **The policy gate restricts, decides before the effect, and fails closed.** It never
+   grants what the client wouldn't, it runs before the tool receives data or credentials,
+   and a gate that can't decide denies. The deciding code is deterministic, so every
+   decision can be unit-tested, replayed with `policy-test`, and explained from the audit
+   log.
 
 ### Data model
 
@@ -628,6 +832,8 @@ mcpguard-web/
 | `MCPServerSpec` | One scan target: `command`/`args`/`env` or `url`/`headers`, plus `source_path` and `manifest`. |
 | `MCPTool` | Name, description, title, annotations, input and output schemas; `text_fields()` yields every model-visible string. |
 | `Verdict` / `AIConfig` | A judge's per-question probabilities; the scan's judge, thresholds, and fail policy. |
+| `ToolCall` / `Decision` | A proposed call (server, tool, arguments, user, session, HTTP headers) and the gate's answer: allow / ask / deny, every reason, destinations, resources. |
+| `Policy` / `SessionState` | A parsed policy file (rules, checks, allow-lists, reviewed lockfile); per-session roles, taint, and call digests. |
 
 ---
 
@@ -663,6 +869,16 @@ Signatures belong in `patterns.py`, not inline, so they can be reviewed and reus
 **A judge question** — edit `QUESTIONS` in `ai/base.py`, bump `QUESTION_VERSION`, and
 regenerate `mcpguard-web/lib/ai/questions.json` (a test enforces that they match).
 
+**A policy check** — add its name and default decision to `CHECKS` in `policy.py` and yield
+`(name, message)` from `_builtin_checks`. Keep the message free of argument values (it
+reaches the model and the audit log), and add a `policy-test` scenario that proves a
+forbidden call no longer runs.
+
+**A browser rule** — port it to `mcpguard-web/lib/scanner/rules.ts`, add a server that
+triggers every variant to `tests/fixtures/attack_config.json`, and regenerate
+`attack_config.expected.json` from the Python engine; both suites then hold the two engines
+to the same output.
+
 ---
 
 ## Samples
@@ -676,6 +892,7 @@ regenerate `mcpguard-web/lib/ai/questions.json` (a test enforces that they match
 | `05-tool-poisoning-manifest.json` | The classic poisoning attack → TP01, TP02 (and AI01 / AI03 with `--ai`) |
 | `06-excessive-agency-manifest.json` | Over-scoped tools → CAP01 |
 | `07-shadowing-toxic-flow.json` | A multi-server attack chain → TP03 shadowing, TP02 ASCII smuggling, SUP02 malware, FLOW01 lethal trifecta |
+| `policy/support-agent.*` | The talk's support agent: a config, its reviewed lockfile, a runtime policy, and 9 hostile scenarios for `policy-test` (poisoned ticket, paraphrased injection, rug-pulled field, canary, header desync, identity) |
 
 Keys in `03` are **fake but format-valid** (the AWS pair is AWS's documentation example).
 
@@ -686,20 +903,20 @@ Keys in `03` are **fake but format-valid** (the AWS pair is AWS's documentation 
 ```bash
 # Python engine
 cd mcpguard
-pytest --cov=mcpguard            # 524 tests; 93% branch coverage
+pytest --cov=mcpguard            # 771 tests; 94% branch coverage
 pytest -m live                   # real Jev / Claude calls (needs keys; skips cleanly without)
 mcpguard redteam                 # detection / false-positive report
 mypy                             # strict
 
 # Web
 cd mcpguard-web
-npm run test                     # 174 tests
+npm run test                     # 189 tests
 npm run typecheck && npm run lint && npm run build
 ```
 
 | Control | Standard held |
 |---|---|
-| Tests | **698 automated** — 524 Python (+2 live) and 174 web. Every rule has true-positive and benign-lookalike cases; the 122 red-team cases are pinned one test each. |
+| Tests | **960 automated** — 771 Python (+2 live) and 189 web. Every rule has true-positive and benign-lookalike cases; the 122 red-team cases are pinned one test each; the policy gate's safety properties (most-restrictive-wins, fail-closed, taint, trifecta, schema pinning, SSRF-safe OAuth discovery) are mutation-checked. |
 | Cross-engine parity | The TypeScript engine reproduces the Python output exactly on shared fixtures — deterministic rules and the AI layer. |
 | AI layer | Jev and Claude tested against fake transports (wire format, retries, refusals, circuit breaker); live smoke tests with real keys. |
 | Hostile input | ReDoS tests (2 MB adversarial inputs stay linear), malformed and deeply nested configs, partial findings kept on rule crashes, terminal-escape and lone-surrogate sanitization of reports. |
@@ -716,9 +933,15 @@ npm run typecheck && npm run lint && npm run build
 - **False positives exist** — mainly text that quotes attacks, and legitimately directive
   tool descriptions (see the red-team section).
 - **Not measured yet:** the Claude judge. The published numbers are for Jev.
-- **Out of scope** (runtime behavior a config scanner can't observe): OAuth confused-deputy
-  and token-passthrough flaws inside a server, sampling / elicitation abuse during a
-  session, DNS rebinding of a server's own listener, and MCP Apps (`ui://`) HTML.
+- **The policy gate sees proposed calls, not server internals.** A malicious server that
+  ignores its description and sends data from inside its own process is out of the gate's
+  view: EGR01 reads its source and MAN02 flags new destinations, but containing it at run
+  time needs an OS sandbox with restricted filesystem and outbound network.
+- **Roles are inferred from tool names** unless the policy declares them; declare `roles`
+  for anything the trifecta and duplicate checks must get right.
+- **Out of scope**: OAuth confused-deputy and token-passthrough flaws inside a server,
+  sampling / elicitation abuse during a session, DNS rebinding of a server's own listener,
+  and MCP Apps (`ui://`) HTML.
 - **AI02** reviews at most 25 files per server (reported when capped) and only files that
   contain a sink.
 
@@ -728,10 +951,10 @@ npm run typecheck && npm run lint && npm run build
 
 | Next | Why |
 |---|---|
-| MCP spec 2026-07-28 handshake in `--connect` | The stateless `server/discover` flow replaces `initialize`. |
+| MCP spec 2026-07-28 handshake in `--connect` | The stateless `server/discover` flow replaces `initialize`; waits on MCP SDK support. |
+| Sandboxed trial run (`mcpguard try`) | "What does it actually do?" — run a server in a restricted environment and record its file and network activity against the EGR01 inventory. |
 | Live advisory feed (OSV / GHSA) for SUP02 | The offline list is deterministic but ages. |
 | Project-scoped agent settings | Scan `.claude/settings.json` (`enableAllProjectMcpServers`, hooks, `ANTHROPIC_BASE_URL`), `.cursor/`, `.gemini/`, `.amazonq/`. |
-| OAuth metadata checks in `--connect` | Non-HTTPS / private-IP / `javascript:` authorization endpoints (the `mcp-remote` CVE class). |
 | MCP Apps (`ui://`) resources | Credential forms and external scripts in served HTML. |
 | Per-rule allow-lists with justification | A shell tool isn't a finding in a shell server. |
 | SARIF output | Findings in GitHub code scanning with no extra integration. |

@@ -18,9 +18,10 @@ from .rules import Rule, load_rules
 if TYPE_CHECKING:
     from .ai import AIConfig
     from .dynamic.connector import Connector
+    from .dynamic.oauth import AuthMetadata
     from .lockfile import LockEntry
 
-__all__ = ["enumerate_live", "scan_file", "scan_spec", "scan_specs"]
+__all__ = ["discover_auth", "enumerate_live", "scan_file", "scan_spec", "scan_specs"]
 
 
 def scan_spec(
@@ -63,15 +64,17 @@ def scan_specs(
     active = rules if rules is not None else load_rules(include_dynamic=include_dynamic)
     reports = [Report(target=spec.name) for spec in specs]
     live: list[MCPManifest | None] = [None] * len(specs)
+    auth: list[AuthMetadata | None] = [None] * len(specs)
     if include_dynamic and connector is not None:
         for index, spec in enumerate(specs):
             live[index] = _connect(spec, connector, reports[index])
+            auth[index] = discover_auth(spec, connector)
 
     peers = tuple(
         (spec, manifest if manifest is not None else spec.manifest)
         for spec, manifest in zip(specs, live)
     )
-    for spec, manifest, report in zip(specs, live, reports):
+    for spec, manifest, report, auth_meta in zip(specs, live, reports, auth):
         ctx = AnalysisContext(
             include_dynamic=include_dynamic,
             connector=connector,
@@ -79,6 +82,7 @@ def scan_specs(
             peers=peers,
             baseline=baseline,
             ai=ai,
+            auth_metadata=auth_meta,
         )
         errors_before = len(ai.errors) if ai is not None else 0
         for rule in active:
@@ -117,6 +121,26 @@ def enumerate_live(
         if report.findings:
             failures.append(report)
     return manifests, failures
+
+
+def discover_auth(spec: MCPServerSpec, connector: Connector) -> AuthMetadata | None:
+    """The server's OAuth metadata, when the connector can discover it (AUTH01).
+
+    A discovery failure is carried as an error inside the metadata (AUTH01 reports
+    it as INFO) rather than raised, so it never costs the rest of the scan.
+    """
+    fetch = getattr(connector, "fetch_auth_metadata", None)
+    if not callable(fetch):
+        return None
+    try:
+        result = fetch(spec)
+    except Exception as exc:  # noqa: BLE001 - network / parse failures degrade to INFO
+        from .dynamic.oauth import AuthMetadata
+
+        return AuthMetadata(server_url=spec.url or "", errors=(f"{type(exc).__name__}: {exc}",))
+    from .dynamic.oauth import AuthMetadata
+
+    return result if isinstance(result, AuthMetadata) else None
 
 
 def _ai_unavailable(spec: MCPServerSpec, ai: AIConfig, errors: list[str]) -> Finding:

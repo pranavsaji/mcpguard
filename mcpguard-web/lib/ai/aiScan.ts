@@ -32,7 +32,7 @@ const AI01 = {
   rule_id: "AI01",
   title: "AI judge: tool metadata manipulates the assistant",
   category: "tool_poisoning" as const,
-  mappings: ["OWASP-LLM01", "MCP-TOOL-POISONING"],
+  mappings: ["OWASP-LLM01", "MCP-TOOL-POISONING", "OWASP-ASI01"],
 };
 const AI01_SEVERITY: Record<string, Severity> = {
   exfiltration: "critical",
@@ -50,7 +50,7 @@ const AI03 = {
   rule_id: "AI03",
   title: "AI judge: tool exceeds the server's stated purpose",
   category: "excessive_agency" as const,
-  mappings: ["OWASP-AGENTIC-EXCESSIVE-AGENCY"],
+  mappings: ["OWASP-AGENTIC-EXCESSIVE-AGENCY", "OWASP-ASI02"],
 };
 const ROLE_QUESTIONS: Record<string, string> = {
   untrusted_input: "untrusted",

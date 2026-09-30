@@ -10,19 +10,28 @@ Hashing the *whole* tool object matters: pins that cover only the description
 miss a rug pull that swaps the schema, adds a poisoned parameter, or flips
 ``readOnlyHint``. The file is deterministic (sorted keys, no timestamps) so it
 diffs cleanly in code review.
+
+Beside the manifest, an entry can pin what the server *reaches*: the outbound
+hosts its source contacts (``egress``, when the source is on disk) and, with
+``--connect``, the OAuth issuers and scopes it advertises (``auth``). MAN02
+flags a new destination, a changed authorization server, or a wider scope set.
 """
 
 from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from .config_parser import ConfigError, parse_manifest
 from .launchers import parse_launch
 from .models import MCPManifest, MCPServerSpec, MCPTool
 from .util import canonical_json
+
+if TYPE_CHECKING:
+    from .dynamic.oauth import AuthMetadata
 
 __all__ = ["LOCK_VERSION", "LockEntry", "build_lock", "launch_identity", "load_lock", "tool_digest"]
 
@@ -90,12 +99,26 @@ class LockEntry:
     manifest: MCPManifest | None
     package: str | None = None
     version: str | None = None
+    egress: tuple[str, ...] | None = None  # None: source wasn't available at review
+    auth_issuers: tuple[str, ...] | None = None  # None: not locked with --connect / no OAuth
+    auth_scopes: tuple[str, ...] | None = None
 
 
 def build_lock(
-    specs: list[MCPServerSpec], manifests: dict[str, MCPManifest | None], *, generator: str
+    specs: list[MCPServerSpec],
+    manifests: dict[str, MCPManifest | None],
+    *,
+    generator: str,
+    egress: Mapping[str, list[str]] | None = None,
+    auth: Mapping[str, AuthMetadata | None] | None = None,
 ) -> dict[str, Any]:
-    """Build the lockfile document for ``specs`` using ``manifests`` (by server name)."""
+    """Build the lockfile document for ``specs`` using ``manifests`` (by server name).
+
+    ``egress`` maps a server to the hosts its source contacts (only servers whose
+    source was read); ``auth`` to its discovered OAuth metadata.
+    """
+    from .dynamic.oauth import scopes_of
+
     servers: dict[str, object] = {}
     for spec in sorted(specs, key=lambda s: s.name):
         launch = parse_launch(spec.command, spec.args)
@@ -109,6 +132,11 @@ def build_lock(
             entry["manifest_sha256"] = _sha256(manifest_dict(manifest))
             entry["tool_sha256"] = {t.name: tool_digest(t) for t in manifest.tools}
             entry["manifest"] = manifest_dict(manifest)
+        if egress is not None and spec.name in egress:
+            entry["egress"] = sorted(egress[spec.name])
+        meta = auth.get(spec.name) if auth is not None else None
+        if meta is not None and meta.resource_metadata is not None:
+            entry["auth"] = {"issuers": meta.issuers, "scopes": scopes_of(meta)}
         servers[spec.name] = entry
     return {"mcpguard_lock": LOCK_VERSION, "generated_by": generator, "servers": servers}
 
@@ -144,10 +172,21 @@ def load_lock(path: str) -> dict[str, LockEntry]:
                     f"{path!r}: baseline for server {name!r} fails its integrity hash "
                     "(edited by hand?). Re-create it with `mcpguard lock`."
                 )
+        raw_auth = raw.get("auth")
+        auth: dict[str, Any] = raw_auth if isinstance(raw_auth, dict) else {}
         out[str(name)] = LockEntry(
             launch=str(raw.get("launch", "")),
             manifest=manifest,
             package=raw.get("package") if isinstance(raw.get("package"), str) else None,
             version=raw.get("version") if isinstance(raw.get("version"), str) else None,
+            egress=_str_tuple(raw.get("egress")),
+            auth_issuers=_str_tuple(auth.get("issuers")),
+            auth_scopes=_str_tuple(auth.get("scopes")),
         )
     return out
+
+
+def _str_tuple(value: object) -> tuple[str, ...] | None:
+    if not isinstance(value, list):
+        return None
+    return tuple(str(v) for v in value if isinstance(v, str))

@@ -168,11 +168,15 @@ def parse_manifest(data: dict[str, Any]) -> MCPManifest:
         )
         for p in _as_list(data.get("prompts"))
     )
+    ttl = data.get("ttlMs", data.get("ttl_ms"))
+    scope = data.get("cacheScope", data.get("cache_scope"))
     return MCPManifest(
         instructions=str(data.get("instructions", "")),
         tools=tools,
         resources=resources,
         prompts=prompts,
+        ttl_ms=ttl if isinstance(ttl, int) and not isinstance(ttl, bool) else None,
+        cache_scope=scope if isinstance(scope, str) else "",
     )
 
 

@@ -531,3 +531,96 @@ KNOWN_SERVER_ROLES: dict[str, frozenset[str]] = {
     "mcp-server-git": frozenset({"private"}),
     "ghcr.io/github/github-mcp-server": frozenset({"untrusted", "private", "sink"}),
 }
+
+# A sensitive-file reference on its own (no verb): used by the runtime policy
+# gate, which sees tool *arguments* rather than prose.
+SENSITIVE_PATH_RE: Pattern[str] = re.compile(_SENSITIVE_PATH, re.IGNORECASE)
+
+# --------------------------------------------------------------------------- #
+# MCP 2026-07-28 protocol surface (HDR01, CACHE01)                            #
+# --------------------------------------------------------------------------- #
+
+# ``x-mcp-header`` values must be an RFC 9110 field-name token (``1*tchar``).
+HTTP_TOKEN_RE: Pattern[str] = re.compile(r"^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$")
+# Parameter types the spec allows to be mirrored into a header (not ``number``).
+HEADER_PARAM_TYPES: frozenset[str] = frozenset({"string", "integer", "boolean"})
+# A list cache lifetime past this delays when clients see a changed tool list.
+LONG_CACHE_TTL_MS = 24 * 60 * 60 * 1000
+
+# --------------------------------------------------------------------------- #
+# Publisher provenance: impersonation and typosquats (SUP03)                  #
+# --------------------------------------------------------------------------- #
+
+# Well-known MCP server packages: the names a typosquat imitates. Exact matches
+# are never flagged. Deliberately broader than "official": a lookalike of any
+# widely installed name is the attack.
+WELL_KNOWN_PACKAGES: dict[str, frozenset[str]] = {
+    "npm": frozenset({
+        "@modelcontextprotocol/server-everything", "@modelcontextprotocol/server-memory",
+        "@modelcontextprotocol/server-filesystem", "@modelcontextprotocol/server-sequential-thinking",
+        "@modelcontextprotocol/server-github", "@modelcontextprotocol/server-gitlab",
+        "@modelcontextprotocol/server-slack", "@modelcontextprotocol/server-puppeteer",
+        "@modelcontextprotocol/server-brave-search", "@modelcontextprotocol/server-gdrive",
+        "@modelcontextprotocol/server-google-maps", "@modelcontextprotocol/server-postgres",
+        "@modelcontextprotocol/server-redis", "@modelcontextprotocol/server-sentry",
+        "@modelcontextprotocol/inspector", "@playwright/mcp", "@notionhq/notion-mcp-server",
+        "@stripe/mcp", "@supabase/mcp-server-supabase", "@sentry/mcp-server",
+        "@upstash/context7-mcp", "@cloudflare/mcp-server-cloudflare", "@heroku/mcp-server",
+        "@azure/mcp", "@browserbasehq/mcp-server-browserbase", "mcp-remote", "firecrawl-mcp",
+        "figma-developer-mcp", "mcp-server-kubernetes",
+    }),
+    "pypi": frozenset({
+        "mcp-server-fetch", "mcp-server-git", "mcp-server-time", "mcp-server-sqlite",
+        "mcp-atlassian", "mcp",
+    }),
+}
+# npm scopes that publish reference / vendor servers, and lookalikes of them.
+TRUSTED_SCOPES: frozenset[str] = frozenset({
+    "@modelcontextprotocol", "@playwright", "@notionhq", "@stripe", "@supabase", "@sentry",
+    "@upstash", "@cloudflare", "@heroku", "@azure", "@browserbasehq", "@microsoft", "@github",
+})
+# Brand -> the scopes / name prefixes its own packages are published under. An
+# MCP package named after the brand from anywhere else is worth a publisher check:
+# postmark-mcp (2025) was exactly that. An empty tuple: no package is verified.
+BRAND_PUBLISHERS: dict[str, tuple[str, ...]] = {
+    "postmark": (), "sendgrid": ("@sendgrid",), "mailgun": ("@mailgun",),
+    "mailchimp": ("@mailchimp",), "gmail": (), "stripe": ("@stripe",), "paypal": ("@paypal",),
+    "github": ("@github", "@modelcontextprotocol"), "gitlab": ("@gitlab", "@modelcontextprotocol"),
+    "slack": ("@slack", "@modelcontextprotocol"), "notion": ("@notionhq",),
+    "supabase": ("@supabase",), "sentry": ("@sentry", "@modelcontextprotocol"),
+    "cloudflare": ("@cloudflare",), "shopify": ("@shopify",), "twilio": ("@twilio", "@twilio-alpha"),
+    "openai": ("@openai",), "anthropic": ("@anthropic-ai",), "atlassian": ("@atlassian",),
+    "jira": ("@atlassian",), "figma": ("@figma",), "aws": ("@aws", "@aws-sdk", "awslabs."),
+    "azure": ("@azure", "@microsoft"), "salesforce": ("@salesforce",), "hubspot": ("@hubspot",),
+}
+
+# --------------------------------------------------------------------------- #
+# Outbound destinations in server source (EGR01)                              #
+# --------------------------------------------------------------------------- #
+
+# A network call whose first argument is a literal URL (matched on the "text"
+# view, where string contents are kept). Group "url" is the destination.
+NETWORK_CALL_URL_RE: Pattern[str] = re.compile(
+    r"(?:\bfetch|\baxios(?:\.(?:get|post|put|patch|delete|request))?|\bgot(?:\.(?:get|post|put))?"
+    r"|\bhttps?\.(?:request|get)|\bnew\s+WebSocket|\bsendBeacon|\bky(?:\.(?:get|post))?"
+    r"|\brequests\.(?:get|post|put|patch|delete|request)|\bhttpx\.(?:get|post|put|patch|delete|request|stream)"
+    r"|\b(?:urllib\.request\.)?urlopen|\bRequest|\bsession\.(?:get|post|put)|\bclient\.(?:get|post|put))"
+    r"\s*\(\s*(?:[\"'][A-Z]{3,7}[\"']\s*,\s*)?[\"'`](?P<url>(?:https?|wss?)://[^\"'`\s]{3,300})[\"'`]"
+)
+# A hard-coded extra recipient in mail-sending code: the postmark-mcp backdoor.
+HIDDEN_RECIPIENT_RE: Pattern[str] = re.compile(
+    r"""(?:\b(?:bcc|Bcc|BCC)\b["']?\s*[:=\]]\s*|\[\s*["'](?:Bcc|BCC|bcc)["']\s*\]\s*=\s*)"""
+    r"""[\[(]?\s*["'`](?P<addr>[\w.+-]{1,64}@[\w-]{1,63}(?:\.[\w-]{1,63})+)["'`]"""
+)
+# Services built to receive arbitrary data: a hard-coded call to one is an exfil path.
+COLLECTOR_HOST_SUFFIXES: tuple[str, ...] = (
+    "webhook.site", "requestbin.com", "requestbin.net", "pipedream.net", "m.pipedream.net",
+    "ngrok.io", "ngrok-free.app", "ngrok.app", "interact.sh", "oast.fun", "oast.pro", "oast.live",
+    "oast.site", "oast.online", "oastify.com", "burpcollaborator.net", "hookbin.com",
+    "beeceptor.com", "pastebin.com", "transfer.sh", "trycloudflare.com", "serveo.net",
+    "localtunnel.me", "loca.lt",
+)
+# Paths on otherwise ordinary hosts that deliver to an attacker-owned channel.
+COLLECTOR_URL_RE: Pattern[str] = re.compile(
+    r"discord(?:app)?\.com/api/webhooks/|api\.telegram\.org/bot", re.IGNORECASE
+)

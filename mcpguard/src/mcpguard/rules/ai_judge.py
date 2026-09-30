@@ -57,7 +57,7 @@ class AIToolPoisoningRule(Rule):
     title = "AI judge: tool metadata manipulates the assistant"
     category = Category.TOOL_POISONING
     default_severity = Severity.HIGH
-    mappings = ("OWASP-LLM01", "MCP-TOOL-POISONING")
+    mappings = ("OWASP-LLM01", "MCP-TOOL-POISONING", "OWASP-ASI01")
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
         ai = ctx.ai

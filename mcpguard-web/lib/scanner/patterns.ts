@@ -460,3 +460,53 @@ export const KNOWN_SERVER_ROLES: Record<string, ReadonlySet<string>> = {
   "mcp-server-git": new Set(["private"]),
   "ghcr.io/github/github-mcp-server": new Set(["untrusted", "private", "sink"]),
 };
+
+// --- MCP 2026-07-28 protocol surface (HDR01, CACHE01) -----------------------------
+
+/** `x-mcp-header` values must be an RFC 9110 field-name token (`1*tchar`). */
+export const HTTP_TOKEN_RE = pyRe(String.raw`^[!#$%&'*+\-.^_` + "`" + String.raw`|~0-9A-Za-z]+$`);
+/** Parameter types the spec allows to be mirrored into a header (not `number`). */
+export const HEADER_PARAM_TYPES: ReadonlySet<string> = new Set(["string", "integer", "boolean"]);
+/** A list cache lifetime past this delays when clients see a changed tool list. */
+export const LONG_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+// --- Publisher provenance: impersonation and typosquats (SUP03) ----------------------
+
+/** Well-known MCP server packages: the names a typosquat imitates. */
+export const WELL_KNOWN_PACKAGES: Record<string, ReadonlySet<string>> = {
+  npm: new Set([
+    "@modelcontextprotocol/server-everything", "@modelcontextprotocol/server-memory",
+    "@modelcontextprotocol/server-filesystem", "@modelcontextprotocol/server-sequential-thinking",
+    "@modelcontextprotocol/server-github", "@modelcontextprotocol/server-gitlab",
+    "@modelcontextprotocol/server-slack", "@modelcontextprotocol/server-puppeteer",
+    "@modelcontextprotocol/server-brave-search", "@modelcontextprotocol/server-gdrive",
+    "@modelcontextprotocol/server-google-maps", "@modelcontextprotocol/server-postgres",
+    "@modelcontextprotocol/server-redis", "@modelcontextprotocol/server-sentry",
+    "@modelcontextprotocol/inspector", "@playwright/mcp", "@notionhq/notion-mcp-server",
+    "@stripe/mcp", "@supabase/mcp-server-supabase", "@sentry/mcp-server",
+    "@upstash/context7-mcp", "@cloudflare/mcp-server-cloudflare", "@heroku/mcp-server",
+    "@azure/mcp", "@browserbasehq/mcp-server-browserbase", "mcp-remote", "firecrawl-mcp",
+    "figma-developer-mcp", "mcp-server-kubernetes",
+  ]),
+  pypi: new Set([
+    "mcp-server-fetch", "mcp-server-git", "mcp-server-time", "mcp-server-sqlite",
+    "mcp-atlassian", "mcp",
+  ]),
+};
+/** npm scopes that publish reference / vendor servers, and lookalikes of them. */
+export const TRUSTED_SCOPES: ReadonlySet<string> = new Set([
+  "@modelcontextprotocol", "@playwright", "@notionhq", "@stripe", "@supabase", "@sentry",
+  "@upstash", "@cloudflare", "@heroku", "@azure", "@browserbasehq", "@microsoft", "@github",
+]);
+/** Brand -> the scopes / name prefixes its own packages are published under. */
+export const BRAND_PUBLISHERS: Record<string, readonly string[]> = {
+  postmark: [], sendgrid: ["@sendgrid"], mailgun: ["@mailgun"],
+  mailchimp: ["@mailchimp"], gmail: [], stripe: ["@stripe"], paypal: ["@paypal"],
+  github: ["@github", "@modelcontextprotocol"], gitlab: ["@gitlab", "@modelcontextprotocol"],
+  slack: ["@slack", "@modelcontextprotocol"], notion: ["@notionhq"],
+  supabase: ["@supabase"], sentry: ["@sentry", "@modelcontextprotocol"],
+  cloudflare: ["@cloudflare"], shopify: ["@shopify"], twilio: ["@twilio", "@twilio-alpha"],
+  openai: ["@openai"], anthropic: ["@anthropic-ai"], atlassian: ["@atlassian"],
+  jira: ["@atlassian"], figma: ["@figma"], aws: ["@aws", "@aws-sdk", "awslabs."],
+  azure: ["@azure", "@microsoft"], salesforce: ["@salesforce"], hubspot: ["@hubspot"],
+};

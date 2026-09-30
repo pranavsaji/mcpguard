@@ -59,7 +59,7 @@ class SecretsRule(Rule):
     title = "Plaintext secret in server config env"
     category = Category.SECRETS
     default_severity = Severity.HIGH
-    mappings = ("CWE-798", "MCP-SECRETS")
+    mappings = ("CWE-798", "MCP-SECRETS", "OWASP-ASI03")
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
         for key, value in target.env.items():

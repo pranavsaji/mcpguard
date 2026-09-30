@@ -76,7 +76,7 @@ class PinningRule(Rule):
     title = "Unpinned or remote-fetched MCP server"
     category = Category.SUPPLY_CHAIN
     default_severity = Severity.MEDIUM
-    mappings = ("MCP-SUPPLY-CHAIN", "SLSA-PROVENANCE")
+    mappings = ("MCP-SUPPLY-CHAIN", "SLSA-PROVENANCE", "OWASP-ASI04")
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
         if target.command is None:
