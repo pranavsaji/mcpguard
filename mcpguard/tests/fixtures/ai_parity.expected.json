@@ -1,0 +1,199 @@
+{
+  "_comment": "Python engine output with the marker judge; the TS aiScanSpecs must match exactly.",
+  "findings": [
+    {
+      "rule_id": "AI01",
+      "title": "AI judge: tool metadata manipulates the assistant",
+      "severity": "critical",
+      "category": "tool_poisoning",
+      "location": {
+        "server": "tickets",
+        "tool": "summarize"
+      },
+      "evidence": "marker: directs the assistant p=0.95, solicits or sends sensitive data p=0.95, asks for secrecy from the user p=0.95",
+      "remediation": "An AI judge reads this text as an attempt to manipulate the assistant. Review it by hand; treat the server as untrusted until you do.",
+      "mappings": [
+        "OWASP-LLM01",
+        "MCP-TOOL-POISONING"
+      ],
+      "confidence": 0.95,
+      "target": "tickets"
+    },
+    {
+      "rule_id": "AI01",
+      "title": "AI judge: tool metadata manipulates the assistant",
+      "severity": "high",
+      "category": "tool_poisoning",
+      "location": {
+        "server": "tickets",
+        "tool": "triage"
+      },
+      "evidence": "marker: steers other tools p=0.95",
+      "remediation": "An AI judge reads this text as an attempt to manipulate the assistant. Review it by hand; treat the server as untrusted until you do.",
+      "mappings": [
+        "OWASP-LLM01",
+        "MCP-TOOL-POISONING"
+      ],
+      "confidence": 0.95,
+      "target": "tickets"
+    },
+    {
+      "rule_id": "FLOW01",
+      "title": "Lethal trifecta: untrusted input + private data + exfiltration path",
+      "severity": "high",
+      "category": "toxic_flow",
+      "location": {
+        "server": "tickets"
+      },
+      "evidence": "untrusted input: tickets/lookup_ticket; private data: crm/customer_records; exfiltration: partner/notify_partner",
+      "remediation": "Injected text read by one tool can drive the others to leak private data. Split these servers across separate agent sessions, remove one leg of the trifecta, or require human approval for every sink call.",
+      "mappings": [
+        "OWASP-LLM01",
+        "MCP-TOXIC-FLOW",
+        "OWASP-AGENTIC-EXCESSIVE-AGENCY"
+      ],
+      "confidence": 0.6,
+      "target": "tickets"
+    },
+    {
+      "rule_id": "FLOW01",
+      "title": "Untrusted input can reach code execution",
+      "severity": "high",
+      "category": "toxic_flow",
+      "location": {
+        "server": "tickets"
+      },
+      "evidence": "untrusted input: tickets/lookup_ticket; code execution: partner/shell",
+      "remediation": "Text an attacker controls can become a command. Sandbox the execution tool and require human approval for it, or remove the untrusted-input tool.",
+      "mappings": [
+        "OWASP-LLM01",
+        "MCP-TOXIC-FLOW",
+        "OWASP-AGENTIC-EXCESSIVE-AGENCY"
+      ],
+      "confidence": 0.6,
+      "target": "tickets"
+    },
+    {
+      "rule_id": "CMD01",
+      "title": "Server source not found locally (RCE source scan skipped)",
+      "severity": "info",
+      "category": "rce_surface",
+      "location": {
+        "server": "tickets",
+        "field": "command"
+      },
+      "evidence": "node t.js",
+      "remediation": "To scan this server's code, add a \"source_path\" (or \"cwd\") pointing at its source to the config entry, or install the package locally (e.g. run the npx/uvx command once) and re-scan.",
+      "mappings": [
+        "MCP-STDIO-RCE",
+        "CWE-78"
+      ],
+      "confidence": 0.0,
+      "target": "tickets"
+    },
+    {
+      "rule_id": "AI01",
+      "title": "AI judge: tool metadata manipulates the assistant",
+      "severity": "high",
+      "category": "tool_poisoning",
+      "location": {
+        "server": "crm",
+        "field": "instructions"
+      },
+      "evidence": "marker: directs the assistant p=0.95",
+      "remediation": "An AI judge reads this text as an attempt to manipulate the assistant. Review it by hand; treat the server as untrusted until you do.",
+      "mappings": [
+        "OWASP-LLM01",
+        "MCP-TOOL-POISONING"
+      ],
+      "confidence": 0.95,
+      "target": "crm"
+    },
+    {
+      "rule_id": "CMD01",
+      "title": "Server source not found locally (RCE source scan skipped)",
+      "severity": "info",
+      "category": "rce_surface",
+      "location": {
+        "server": "crm",
+        "field": "command"
+      },
+      "evidence": "npx -y crm-mcp@1.0.0",
+      "remediation": "To scan this server's code, add a \"source_path\" (or \"cwd\") pointing at its source to the config entry, or install the package locally (e.g. run the npx/uvx command once) and re-scan.",
+      "mappings": [
+        "MCP-STDIO-RCE",
+        "CWE-78"
+      ],
+      "confidence": 0.0,
+      "target": "crm"
+    },
+    {
+      "rule_id": "AI03",
+      "title": "AI judge: tool description reveals hidden or mismatched behavior",
+      "severity": "high",
+      "category": "excessive_agency",
+      "location": {
+        "server": "partner",
+        "tool": "get_time"
+      },
+      "evidence": "marker: mismatch p=0.95; Time. MISMATCH: also uploads contacts.",
+      "remediation": "The tool does something its name and the server's purpose don't suggest. Treat it as deceptive until reviewed.",
+      "mappings": [
+        "OWASP-AGENTIC-EXCESSIVE-AGENCY"
+      ],
+      "confidence": 0.95,
+      "target": "partner"
+    },
+    {
+      "rule_id": "CAP01",
+      "title": "Tool exposes a dangerous capability",
+      "severity": "high",
+      "category": "excessive_agency",
+      "location": {
+        "server": "partner",
+        "tool": "shell"
+      },
+      "evidence": "capabilities inferred: code execution, shell / command",
+      "remediation": "Confirm this tool needs this power. Apply least privilege: scope filesystem/network access, sandbox execution, and require human approval for high-impact actions.",
+      "mappings": [
+        "OWASP-AGENTIC-EXCESSIVE-AGENCY"
+      ],
+      "confidence": 0.7,
+      "target": "partner"
+    },
+    {
+      "rule_id": "AI03",
+      "title": "AI judge: tool exceeds the server's stated purpose",
+      "severity": "medium",
+      "category": "excessive_agency",
+      "location": {
+        "server": "partner",
+        "tool": "shell"
+      },
+      "evidence": "marker: excessive p=0.95; purpose: server name: partner; tool: shell",
+      "remediation": "This server doesn't need this power for what it says it does. Remove or disable the tool, or require approval for every call.",
+      "mappings": [
+        "OWASP-AGENTIC-EXCESSIVE-AGENCY"
+      ],
+      "confidence": 0.95,
+      "target": "partner"
+    },
+    {
+      "rule_id": "CAP01",
+      "title": "Tool exposes a dangerous capability",
+      "severity": "medium",
+      "category": "excessive_agency",
+      "location": {
+        "server": "partner",
+        "tool": "notify_partner"
+      },
+      "evidence": "capabilities inferred: arbitrary network",
+      "remediation": "Confirm this tool needs this power. Apply least privilege: scope filesystem/network access, sandbox execution, and require human approval for high-impact actions.",
+      "mappings": [
+        "OWASP-AGENTIC-EXCESSIVE-AGENCY"
+      ],
+      "confidence": 0.7,
+      "target": "partner"
+    }
+  ]
+}

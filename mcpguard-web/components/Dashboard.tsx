@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { ConfigError, parseConfigText } from "@/lib/scanner/configParser";
 import { scanSpecs } from "@/lib/scanner/scan";
 import type { MCPServerSpec, ScanReport, Severity } from "@/lib/scanner/types";
@@ -21,6 +21,54 @@ export function Dashboard() {
   const [activeSeverities, setActiveSeverities] = useState<Set<Severity>>(new Set());
   const [query, setQuery] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  // Server-side AI judge (Jev / Claude). Keys live only on the server.
+  const [aiAvailable, setAiAvailable] = useState<{ jev: boolean; claude: boolean } | null>(null);
+  const [aiTokenRequired, setAiTokenRequired] = useState(false);
+  const [aiEnabled, setAiEnabled] = useState(false);
+  const [aiToken, setAiToken] = useState("");
+  const [aiStatus, setAiStatus] = useState<{ busy: boolean; judge?: string; errors?: string[]; error?: string }>({
+    busy: false,
+  });
+  const aiRequest = useRef(0);
+
+  useEffect(() => {
+    fetch("/api/ai-scan")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (!d) return;
+        setAiAvailable(d.available);
+        setAiTokenRequired(Boolean(d.tokenRequired));
+      })
+      .catch(() => setAiAvailable(null));
+  }, []);
+
+  const aiConfigured = Boolean(aiAvailable && (aiAvailable.jev || aiAvailable.claude));
+
+  async function runAiScan(text: string, g: Severity) {
+    const id = ++aiRequest.current;
+    setAiStatus({ busy: true });
+    try {
+      const res = await fetch("/api/ai-scan", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(aiToken ? { Authorization: `Bearer ${aiToken}` } : {}),
+        },
+        body: JSON.stringify({ config: text, gate: g, ai: "auto" }),
+      });
+      const data = await res.json();
+      if (id !== aiRequest.current) return; // a newer scan superseded this one
+      if (!res.ok) {
+        setAiStatus({ busy: false, error: data.error ?? `AI scan failed (${res.status})` });
+        return;
+      }
+      const { ai, ...scan } = data;
+      setReport(scan as ScanReport);
+      setAiStatus({ busy: false, judge: ai?.judge, errors: ai?.errors ?? [] });
+    } catch {
+      if (id === aiRequest.current) setAiStatus({ busy: false, error: "Could not reach the AI scan route." });
+    }
+  }
 
   function runScan(text: string, g: Severity = gate) {
     setError(null);
@@ -35,6 +83,8 @@ export function Dashboard() {
       setSpecs(parsed);
       setReport(scanSpecs(parsed, g));
       setActiveSeverities(new Set());
+      if (aiEnabled && aiConfigured) void runAiScan(text, g);
+      else setAiStatus({ busy: false });
     } catch (e) {
       setReport(null);
       setSpecs([]);
@@ -168,6 +218,43 @@ export function Dashboard() {
             onChange={onUpload}
             className="hidden"
           />
+          <label
+            className={`flex items-center gap-2 rounded-lg border border-[var(--color-border)] px-3 py-2 text-xs ${
+              aiConfigured ? "text-slate-300" : "cursor-not-allowed text-slate-500"
+            }`}
+            title={
+              aiConfigured
+                ? `Adds the AI judge layer on the server (${[aiAvailable?.jev && "Jev", aiAvailable?.claude && "Claude"]
+                    .filter(Boolean)
+                    .join(" + ")})`
+                : "No AI judge configured on the server (set TYPESAFE_API_KEY / ANTHROPIC_API_KEY)"
+            }
+          >
+            <input
+              type="checkbox"
+              checked={aiEnabled && aiConfigured}
+              disabled={!aiConfigured}
+              onChange={(e) => setAiEnabled(e.target.checked)}
+            />
+            AI judge
+          </label>
+          {aiEnabled && aiTokenRequired && (
+            <input
+              type="password"
+              value={aiToken}
+              onChange={(e) => setAiToken(e.target.value)}
+              placeholder="AI route token"
+              className="w-36 rounded-lg border border-[var(--color-border)] bg-black/30 px-2 py-2 text-xs text-slate-200"
+            />
+          )}
+          {aiStatus.busy && <span className="text-xs text-sky-300">AI judge reviewing…</span>}
+          {!aiStatus.busy && aiStatus.judge && (
+            <span className="text-xs text-emerald-300" title={(aiStatus.errors ?? []).join("\n")}>
+              AI: {aiStatus.judge}
+              {aiStatus.errors?.length ? ` (${aiStatus.errors.length} warning${aiStatus.errors.length > 1 ? "s" : ""})` : ""}
+            </span>
+          )}
+          {!aiStatus.busy && aiStatus.error && <span className="text-xs text-rose-300">{aiStatus.error}</span>}
           <label className="ml-auto flex items-center gap-2 text-xs text-slate-400">
             Gate
             <select
@@ -195,10 +282,20 @@ export function Dashboard() {
         )}
 
         <p className="mt-4 text-[11px] leading-relaxed text-slate-500">
-          Detects tool poisoning, hidden content, excessive agency, leaked secrets, and unpinned
-          launches. Source-level RCE (CMD01) and live rug-pull (MAN01) checks run in the{" "}
-          <span className="font-mono text-slate-400">mcpguard</span> CLI. Everything runs locally in
-          your browser — no config is uploaded.
+          Detects tool poisoning, hidden content, tool shadowing, toxic flows, excessive agency,
+          leaked secrets, unpinned or vulnerable packages, dangerous launch configs, and plaintext
+          transport. Source-level RCE (CMD01) and live / baseline rug-pull (MAN01, MAN02) checks run
+          in the{" "}
+          <span className="font-mono text-slate-400">mcpguard</span> CLI.{" "}
+          {aiEnabled && aiConfigured ? (
+            <span className="text-amber-300/80">
+              AI judge on: the config is sent to this app&apos;s server, and tool names, descriptions,
+              schemas, and server instructions are sent to the configured AI provider (TypeSafe /
+              Anthropic). Env values and headers are never sent to the AI provider.
+            </span>
+          ) : (
+            <>Everything runs locally in your browser — no config is uploaded.</>
+          )}
         </p>
       </section>
 

@@ -1,5 +1,5 @@
 import { Dashboard } from "@/components/Dashboard";
-import { RULE_CATALOG } from "@/lib/scanner";
+import { ENGINE_VERSION, RULE_CATALOG } from "@/lib/scanner";
 
 export default function Home() {
   return (
@@ -13,14 +13,16 @@ export default function Home() {
             </span>
             <h1 className="text-2xl font-bold tracking-tight text-slate-50">MCPGuard</h1>
             <span className="rounded-full bg-slate-700/40 px-2 py-0.5 font-mono text-[11px] text-slate-400">
-              v0.1.0
+              v{ENGINE_VERSION}
             </span>
           </div>
           <p className="mt-2 max-w-2xl text-sm text-slate-400">
             Security scanner for{" "}
             <span className="text-slate-200">Model Context Protocol</span> servers — the{" "}
             <span className="font-mono text-slate-300">npm audit</span> for MCP. Catches tool
-            poisoning, prompt injection, excessive agency, leaked secrets, and supply-chain risk.
+            poisoning, prompt injection, tool shadowing, toxic data flows, excessive agency, leaked
+            secrets, vulnerable or malicious packages, dangerous launch configs, and insecure
+            transport.
           </p>
         </div>
         <div className="flex flex-wrap gap-1.5">

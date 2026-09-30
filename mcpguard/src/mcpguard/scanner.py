@@ -12,13 +12,15 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from .context import AnalysisContext
-from .models import Category, Finding, Location, MCPServerSpec, Report, Severity
+from .models import Category, Finding, Location, MCPManifest, MCPServerSpec, Report, Severity
 from .rules import Rule, load_rules
 
 if TYPE_CHECKING:
+    from .ai import AIConfig
     from .dynamic.connector import Connector
+    from .lockfile import LockEntry
 
-__all__ = ["scan_spec", "scan_specs", "scan_file"]
+__all__ = ["enumerate_live", "scan_file", "scan_spec", "scan_specs"]
 
 
 def scan_spec(
@@ -27,6 +29,8 @@ def scan_spec(
     rules: list[Rule] | None = None,
     include_dynamic: bool = False,
     connector: Connector | None = None,
+    baseline: dict[str, LockEntry] | None = None,
+    ai: AIConfig | None = None,
 ) -> Report:
     """Scan a single target and return its :class:`Report`.
 
@@ -35,16 +39,10 @@ def scan_spec(
     analyze authoritative data. A failed connection degrades gracefully to an
     ``INFO`` finding rather than aborting the scan.
     """
-    active = rules if rules is not None else load_rules(include_dynamic=include_dynamic)
-    ctx = AnalysisContext(include_dynamic=include_dynamic, connector=connector)
-    report = Report(target=spec.name)
-
-    if include_dynamic and connector is not None:
-        _connect(spec, ctx, report)
-
-    for rule in active:
-        report.extend(_run_rule(rule, spec, ctx))
-    return report
+    return scan_specs(
+        [spec], rules=rules, include_dynamic=include_dynamic, connector=connector,
+        baseline=baseline, ai=ai,
+    )[0]
 
 
 def scan_specs(
@@ -53,30 +51,96 @@ def scan_specs(
     rules: list[Rule] | None = None,
     include_dynamic: bool = False,
     connector: Connector | None = None,
+    baseline: dict[str, LockEntry] | None = None,
+    ai: AIConfig | None = None,
 ) -> list[Report]:
-    """Scan many targets, sharing one rule set instance across them."""
+    """Scan many targets from one config, sharing one rule set instance.
+
+    Runs in two phases: every server is enumerated first (when connecting), so
+    cross-server rules — tool shadowing, toxic flow — see the whole config's
+    effective manifests, not just the servers scanned so far.
+    """
     active = rules if rules is not None else load_rules(include_dynamic=include_dynamic)
-    return [
-        scan_spec(spec, rules=active, include_dynamic=include_dynamic, connector=connector)
-        for spec in specs
-    ]
+    reports = [Report(target=spec.name) for spec in specs]
+    live: list[MCPManifest | None] = [None] * len(specs)
+    if include_dynamic and connector is not None:
+        for index, spec in enumerate(specs):
+            live[index] = _connect(spec, connector, reports[index])
+
+    peers = tuple(
+        (spec, manifest if manifest is not None else spec.manifest)
+        for spec, manifest in zip(specs, live)
+    )
+    for spec, manifest, report in zip(specs, live, reports):
+        ctx = AnalysisContext(
+            include_dynamic=include_dynamic,
+            connector=connector,
+            live_manifest=manifest,
+            peers=peers,
+            baseline=baseline,
+            ai=ai,
+        )
+        errors_before = len(ai.errors) if ai is not None else 0
+        for rule in active:
+            report.extend(_run_rule(rule, spec, ctx))
+        if ai is not None and len(ai.errors) > errors_before:
+            report.add(_ai_unavailable(spec, ai, ai.errors[errors_before:]))
+    return reports
 
 
 def scan_file(
-    path: str, *, include_dynamic: bool = False, connector: Connector | None = None
+    path: str,
+    *,
+    include_dynamic: bool = False,
+    connector: Connector | None = None,
+    baseline: dict[str, LockEntry] | None = None,
+    ai: AIConfig | None = None,
 ) -> list[Report]:
     """Load targets from a config/manifest file and scan each one."""
     from .config_parser import load_targets  # local import avoids a cycle
 
     specs = load_targets(path)
-    return scan_specs(specs, include_dynamic=include_dynamic, connector=connector)
+    return scan_specs(
+        specs, include_dynamic=include_dynamic, connector=connector, baseline=baseline, ai=ai
+    )
 
 
-def _connect(spec: MCPServerSpec, ctx: AnalysisContext, report: Report) -> None:
-    """Populate ``ctx.live_manifest`` from the connector, isolating failures."""
-    assert ctx.connector is not None
+def enumerate_live(
+    specs: list[MCPServerSpec], connector: Connector
+) -> tuple[dict[str, MCPManifest | None], list[Report]]:
+    """Enumerate every server live; return manifests by name plus failure reports."""
+    manifests: dict[str, MCPManifest | None] = {}
+    failures: list[Report] = []
+    for spec in specs:
+        report = Report(target=spec.name)
+        manifests[spec.name] = _connect(spec, connector, report)
+        if report.findings:
+            failures.append(report)
+    return manifests, failures
+
+
+def _ai_unavailable(spec: MCPServerSpec, ai: AIConfig, errors: list[str]) -> Finding:
+    """One finding per target when the judge failed: visible, never a silent pass."""
+    unique = list(dict.fromkeys(errors))
+    return Finding(
+        rule_id="AI00",
+        title="AI judge degraded or unavailable (semantic checks may be incomplete)",
+        severity=Severity.HIGH if ai.fail_closed else Severity.INFO,
+        category=Category.TOOL_POISONING,
+        location=Location(server=spec.name),
+        evidence=f"{len(errors)} failed judgement(s): {'; '.join(unique[:2])}"[:300],
+        remediation=(
+            "Check the judge's API key, quota, and network. Deterministic rules still ran; "
+            "use --ai-fail-closed to fail the gate when the AI layer can't answer."
+        ),
+        confidence=0.0,
+    )
+
+
+def _connect(spec: MCPServerSpec, connector: Connector, report: Report) -> MCPManifest | None:
+    """Enumerate ``spec`` live, isolating failures as an ``INFO`` finding."""
     try:
-        ctx.live_manifest = ctx.connector.fetch_manifest(spec)
+        return connector.fetch_manifest(spec)
     except Exception as exc:
         report.add(
             Finding(
@@ -90,14 +154,22 @@ def _connect(spec: MCPServerSpec, ctx: AnalysisContext, report: Report) -> None:
                 confidence=0.0,
             )
         )
+        return None
 
 
 def _run_rule(rule: Rule, spec: MCPServerSpec, ctx: AnalysisContext) -> list[Finding]:
-    """Execute one rule with error isolation."""
+    """Execute one rule with error isolation.
+
+    Findings are collected one at a time so that a crash part-way through (e.g.
+    on hostile input) keeps everything the rule reported before it.
+    """
+    findings: list[Finding] = []
     try:
-        return list(rule.analyze(spec, ctx))
+        for finding in rule.analyze(spec, ctx):
+            findings.append(finding)  # noqa: PERF402 - a crash must keep partial results
+        return findings
     except Exception as exc:  # pragma: no cover - defensive; exercised in tests via stub
-        return [
+        return findings + [
             Finding(
                 rule_id=getattr(rule, "id", "UNKNOWN"),
                 title="Rule raised an exception (skipped)",

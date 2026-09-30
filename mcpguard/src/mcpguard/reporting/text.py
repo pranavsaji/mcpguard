@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..models import Report, Severity
+from ..util import safe_text
 
 _RESET = "\033[0m"
 _SEVERITY_COLOR: dict[Severity, str] = {
@@ -54,7 +55,7 @@ def format_text(
 
     for report in reports:
         findings = report.sorted()
-        header = _paint(f"● server: {report.target}", "\033[1m", enabled=color)
+        header = _paint(f"● server: {safe_text(report.target)}", "\033[1m", enabled=color)
         lines.append(header)
         if not findings:
             lines.append(_paint("  no findings ✓", "\033[32m", enabled=color))
@@ -63,12 +64,12 @@ def format_text(
         for finding in findings:
             sev = finding.severity
             badge = _paint(f"{str(sev).upper():<8}", _SEVERITY_COLOR[sev], enabled=color)
-            lines.append(f"  {badge} {finding.rule_id}  {finding.title}")
-            lines.append(f"           └ {finding.location}")
-            lines.append(f"           evidence: {finding.evidence}")
+            lines.append(f"  {badge} {finding.rule_id}  {safe_text(finding.title)}")
+            lines.append(f"           └ {safe_text(str(finding.location))}")
+            lines.append(f"           evidence: {safe_text(finding.evidence)}")
             if finding.mappings:
                 lines.append(f"           refs: {', '.join(finding.mappings)}")
-            lines.append(f"           fix: {finding.remediation}")
+            lines.append(f"           fix: {safe_text(finding.remediation)}")
         counts = ", ".join(f"{v} {k}" for k, v in report.counts().items())
         lines.append(f"  {len(findings)} finding(s): {counts}")
         lines.append("")

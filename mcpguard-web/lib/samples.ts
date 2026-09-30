@@ -19,7 +19,7 @@ export const SAMPLES: SampleEntry[] = [
   {
     id: "02-best-practice-pinned",
     label: "Best practice (pinned)",
-    hint: "Same servers, pinned versions + ${ENV} secrets — should pass",
+    hint: "Same servers, pinned versions + ${ENV} secrets — passes the gate",
     expect: "clean",
   },
   {
@@ -44,6 +44,12 @@ export const SAMPLES: SampleEntry[] = [
     id: "06-excessive-agency-manifest",
     label: "Excessive agency",
     hint: "Over-powered tools: shell, delete, raw SQL, arbitrary HTTP",
+    expect: "findings",
+  },
+  {
+    id: "07-shadowing-toxic-flow",
+    label: "Shadowing + toxic flow",
+    hint: "Cross-server shadowing, ASCII smuggling, malicious package, lethal trifecta",
     expect: "findings",
   },
 ];

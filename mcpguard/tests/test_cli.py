@@ -1,7 +1,8 @@
 """End-to-end CLI tests, including the vulnerable/clean fixtures.
 
 These are the acceptance tests: the scanner must flag every planted issue in the
-vulnerable fixture and stay silent on the clean one, with correct exit codes.
+vulnerable fixture and raise nothing above INFO on the clean one, with correct
+exit codes.
 """
 
 from __future__ import annotations
@@ -49,20 +50,23 @@ class TestScanCleanFixture:
         code = main(["scan", CLEAN])
         out = capsys.readouterr().out
         assert code == EXIT_OK
-        assert "no findings" in out
+        assert "CMD01" in out  # the only output is the "source not found" coverage note
 
     def test_json_ok_true(self, capsys: pytest.CaptureFixture[str]) -> None:
         main(["scan", CLEAN, "--format", "json"])
         doc = json.loads(capsys.readouterr().out)
         assert doc["ok"] is True
-        assert doc["summary"]["total_findings"] == 0
+        # Nothing but the informational note that the npx package's source isn't installed.
+        assert doc["summary"]["by_severity"] == {"info": 1}
+        findings = [f for r in doc["results"] for f in r["findings"]]
+        assert [(f["rule_id"], f["severity"]) for f in findings] == [("CMD01", "info")]
 
 
 class TestThresholdGate:
     def test_lower_threshold_can_flip_clean_to_fail(
         self, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        # The clean fixture has no findings at all, so even 'low' stays OK.
+        # The clean fixture has only an INFO coverage note, so even 'low' stays OK.
         assert main(["scan", CLEAN, "--min-severity", "low"]) == EXIT_OK
         capsys.readouterr()
 

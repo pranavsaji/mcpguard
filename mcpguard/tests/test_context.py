@@ -31,6 +31,23 @@ class TestSourceWalking:
         assert any(p.endswith("app.py") for p in paths)
         assert not any("node_modules" in p for p in paths)
 
+    def test_build_output_skipped_only_beside_src(self, tmp_path: Path) -> None:
+        (tmp_path / "src").mkdir()
+        (tmp_path / "src" / "index.ts").write_text("x\n")
+        (tmp_path / "dist").mkdir()
+        (tmp_path / "dist" / "index.js").write_text("x\n")
+        paths = [p for p, _ in AnalysisContext().iter_source_files(_spec(str(tmp_path)))]
+        assert any(p.endswith("index.ts") for p in paths)
+        assert not any("dist" in p for p in paths)
+
+    def test_build_output_scanned_when_it_is_the_only_code(self, tmp_path: Path) -> None:
+        # Installed npm packages usually ship only dist/.
+        (tmp_path / "dist").mkdir()
+        (tmp_path / "dist" / "index.js").write_text("x\n")
+        (tmp_path / "package.json").write_text("{}")
+        paths = [p for p, _ in AnalysisContext().iter_source_files(_spec(str(tmp_path)))]
+        assert any(p.endswith("index.js") for p in paths)
+
     def test_single_file_source_path(self, tmp_path: Path) -> None:
         f = tmp_path / "server.py"
         f.write_text("print('hi')\n")
