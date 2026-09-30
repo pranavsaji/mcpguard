@@ -3,12 +3,17 @@
 **A security scanner for Model Context Protocol (MCP) servers — the `npm audit` for MCP.**
 
 Scan an MCP client config, a tool manifest, or a live server; get a graded,
-framework-mapped report with a CI exit code. Three layers:
+framework-mapped report with a CI exit code. Four layers:
 
-- **13 deterministic rules** — pure Python stdlib, offline, deterministic.
+- **18 deterministic rules** — pure Python stdlib, offline, deterministic.
 - **An optional AI judge** (`--ai`) — Jev (TypeSafe) and/or Claude, for paraphrased,
   translated, and obfuscated attacks, source-code flaws, and purpose mismatches.
-- **A runtime guard** — scans tool *outputs* for indirect prompt injection; a Claude Code hook.
+- **A runtime output guard** — scans tool *outputs* for indirect prompt injection; a
+  Claude Code `PostToolUse` hook.
+- **A runtime policy gate** — decides on every tool call *before* it runs (user, operation,
+  record, destination, session history) from a JSON policy; a Claude Code `PreToolUse` hook
+  or a gateway check. `policy-test` replays hostile scenarios so "did a forbidden call
+  execute?" becomes a regression test.
 
 Full documentation, architecture, and measured red-team results:
 [github.com/pranavsaji/mcpguard](https://github.com/pranavsaji/mcpguard).
@@ -41,15 +46,27 @@ mcpguard scan config.json --baseline mcpguard.lock.json     # rug-pull / drift c
 mcpguard check-output result.json                # indirect prompt injection in a tool result
 mcpguard check-output --hook --ai jev            # as a Claude Code PostToolUse hook
 
+mcpguard check-call call.json --policy mcpguard.policy.json   # allow / ask / deny, before it runs
+mcpguard check-call --hook --policy mcpguard.policy.json      # as a Claude Code PreToolUse hook
+mcpguard policy-test mcpguard.policy.json scenarios.jsonl     # fail if a forbidden call would run
+
 mcpguard redteam [--ai jev]                      # 122-case red-team suite: detection & FP rates
 ```
 
-Claude Code hook (`.claude/settings.json`):
+Claude Code hooks (`.claude/settings.json`) — the output guard records taint so the
+policy gate can refuse a send after a poisoned result:
 
 ```json
-{"hooks": {"PostToolUse": [{"matcher": "mcp__.*",
-  "hooks": [{"type": "command", "command": "mcpguard check-output --hook --ai jev"}]}]}}
+{"hooks": {
+  "PreToolUse": [{"matcher": "mcp__.*", "hooks": [{"type": "command",
+    "command": "mcpguard check-call --hook --policy mcpguard.policy.json"}]}],
+  "PostToolUse": [{"matcher": "mcp__.*", "hooks": [{"type": "command",
+    "command": "mcpguard check-output --hook --ai jev"}]}]}}
 ```
+
+A worked policy for the support agent from the LLMday talk lives in
+`samples/policy/` (`mcpguard policy-test samples/policy/support-agent.policy.json
+samples/policy/support-agent.scenarios.jsonl`).
 
 AI judge keys (copy `.env.example` to `.env`): `TYPESAFE_API_KEY` for Jev,
 `ANTHROPIC_API_KEY` for Claude. `--ai auto` uses every configured judge as an ensemble.
@@ -69,11 +86,19 @@ Exit codes: `0` clean · `1` gate failed · `2` usage / IO / credential error.
 | SEC01 | Plaintext secrets in env, headers, args, and URLs (19 vendor formats) |
 | SUP01 | Unpinned packages, undigested images, remote fetch-and-run |
 | SUP02 | Known-vulnerable / malicious / archived MCP packages (33 advisories) and campaign IOCs |
+| SUP03 | Publisher provenance: npm scope lookalikes, typosquats of well-known servers, brand impersonation (the postmark-mcp shape) |
 | CFG01 | Dangerous launch config (`LD_PRELOAD`, `NODE_OPTIONS`, TLS off, `sudo`, privileged containers, `/` roots, …) |
 | NET01 | Plaintext HTTP to remote servers; deprecated SSE |
-| MAN01 / MAN02 | Rug pull: manifest and launch drift against the lockfile |
+| HDR01 | MCP 2026-07-28 `x-mcp-header`: invalid / CR-LF / misplaced designations, credentials mirrored into headers |
+| CACHE01 | MCP 2026-07-28 `ttlMs` / `cacheScope`: public caching of authenticated lists, long cache lifetimes |
+| EGR01 | Server source sending to collector / tunnel / webhook hosts, IP literals, hard-coded BCC; outbound-host inventory |
+| AUTH01 | *(--connect)* OAuth metadata: CVE-2025-6514-class endpoints, issuer / resource mix-up, no PKCE S256, no RFC 9207 `iss`, DCR-only, broad scopes |
+| MAN01 / MAN02 | Rug pull: manifest and launch drift against the lockfile, plus new outbound hosts, a changed authorization server, and wider OAuth scopes |
 | AI01 / AI02 / AI03 | *(--ai)* Semantic poisoning · source review (CWE-78/22/89/918) · purpose vs. capability |
 | IPI01 / IPI02 | *(check-output)* Injection in tool outputs; IPI02 with `--ai` |
+| POL | *(check-call)* Pre-call policy: rules on tool / user / role / arguments; canaries, credentials, sensitive paths, destination allow-list, reviewed-schema pinning, `Mcp-Name` / `Mcp-Param-*` header desync, run-time lethal trifecta, taint, duplicate sends |
+
+Findings map to CWE, OWASP LLM, and the OWASP Top 10 for Agentic Applications (`OWASP-ASI01`–`ASI05`).
 
 ## Library
 
@@ -88,7 +113,7 @@ failed = any(r.failed(Severity.HIGH) for r in reports)
 ## Development
 
 ```bash
-pytest --cov=mcpguard     # 524 tests, 93% branch coverage
+pytest --cov=mcpguard     # 771 tests, 94% branch coverage
 pytest -m live            # real Jev / Claude calls (needs keys)
 mcpguard redteam          # detection / false-positive report
 mypy                      # strict

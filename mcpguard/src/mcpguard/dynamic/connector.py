@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 from typing import Any, Protocol, runtime_checkable
 
 from ..models import MCPManifest, MCPPrompt, MCPResource, MCPServerSpec, MCPTool, Transport
+from .oauth import AuthMetadata
 
 __all__ = [
     "Connector",
@@ -41,11 +42,15 @@ class Connector(Protocol):
 class RecordedConnector:
     """A connector that replays a fixed manifest (test / offline replay)."""
 
-    def __init__(self, manifest: MCPManifest) -> None:
+    def __init__(self, manifest: MCPManifest, auth: AuthMetadata | None = None) -> None:
         self._manifest = manifest
+        self._auth = auth
 
     def fetch_manifest(self, spec: MCPServerSpec) -> MCPManifest:
         return self._manifest
+
+    def fetch_auth_metadata(self, spec: MCPServerSpec) -> AuthMetadata | None:
+        return self._auth
 
 
 def _field(obj: object, *names: str, default: Any = None) -> Any:
@@ -74,6 +79,23 @@ class SdkConnector:
 
     def __init__(self, timeout: float = 30.0) -> None:
         self._timeout = timeout
+
+    def fetch_auth_metadata(self, spec: MCPServerSpec) -> AuthMetadata | None:  # pragma: no cover - network
+        """OAuth discovery (RFC 9728 / 8414) for a remote server or bridged URL (AUTH01)."""
+        from ..rules.transport import remote_endpoints
+        from .oauth import discover, http_fetch_json
+
+        url = next((u for _, u in remote_endpoints(spec) if u.startswith(("https://", "http://"))), None)
+        if url is None:
+            return None
+        from urllib.parse import urlparse
+
+        from ..patterns import LOOPBACK_HOST_RE
+
+        local = bool(LOOPBACK_HOST_RE.match(urlparse(url).hostname or ""))
+        return discover(
+            url, lambda u: http_fetch_json(u, timeout=min(self._timeout, 10.0), allow_loopback=local)
+        )
 
     def fetch_manifest(self, spec: MCPServerSpec) -> MCPManifest:  # pragma: no cover - needs SDK + live server
         import anyio

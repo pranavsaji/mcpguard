@@ -59,7 +59,7 @@ class AIPurposeRule(Rule):
     title = "AI judge: tool exceeds the server's stated purpose"
     category = Category.EXCESSIVE_AGENCY
     default_severity = Severity.MEDIUM
-    mappings = ("OWASP-AGENTIC-EXCESSIVE-AGENCY",)
+    mappings = ("OWASP-AGENTIC-EXCESSIVE-AGENCY", "OWASP-ASI02")
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
         ai = ctx.ai

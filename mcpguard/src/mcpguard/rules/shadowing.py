@@ -54,7 +54,7 @@ class ToolShadowingRule(Rule):
     title = "Tool shadowing: metadata steers another server's tools"
     category = Category.TOOL_SHADOWING
     default_severity = Severity.HIGH
-    mappings = ("OWASP-LLM01", "MCP-TOOL-SHADOWING")
+    mappings = ("OWASP-LLM01", "MCP-TOOL-SHADOWING", "OWASP-ASI01")
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
         manifest = ctx.effective_manifest(target)

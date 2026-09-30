@@ -75,7 +75,7 @@ class LaunchConfigRule(Rule):
     title = "Dangerous MCP server launch configuration"
     category = Category.INSECURE_CONFIG
     default_severity = Severity.HIGH
-    mappings = ("CWE-250", "MCP-LOCAL-SERVER-COMPROMISE")
+    mappings = ("CWE-250", "MCP-LOCAL-SERVER-COMPROMISE", "OWASP-ASI05")
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
         yield from self._env(target)

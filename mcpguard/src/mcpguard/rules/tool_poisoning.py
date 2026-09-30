@@ -40,7 +40,7 @@ class ToolPoisoningRule(Rule):
     title = "Prompt injection in tool metadata"
     category = Category.TOOL_POISONING
     default_severity = Severity.HIGH
-    mappings = ("OWASP-LLM01", "MCP-TOOL-POISONING")
+    mappings = ("OWASP-LLM01", "MCP-TOOL-POISONING", "OWASP-ASI01")
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
         manifest = ctx.effective_manifest(target)

@@ -33,11 +33,13 @@ from collections.abc import Iterable, Iterator, Sequence
 from typing import TYPE_CHECKING
 
 from ..context import AnalysisContext
-from ..lockfile import launch_identity, manifest_dict
+from ..egress import egress_hosts
+from ..lockfile import LockEntry, launch_identity, manifest_dict
 from ..models import Category, Finding, Location, MCPManifest, MCPServerSpec, MCPTool, Severity
 from ..rules.base import Rule, register
 from ..util import canonical_json as _canonical
 from ..util import truncate
+from .oauth import scopes_of
 
 if TYPE_CHECKING:
     from ..ai import AIConfig
@@ -64,7 +66,7 @@ class ManifestDriftRule(Rule):
     title = "MCP server manifest drifted from baseline"
     category = Category.RUG_PULL
     default_severity = Severity.HIGH
-    mappings = ("MCP-RUG-PULL", "MCP-MANIFEST-DRIFT")
+    mappings = ("MCP-RUG-PULL", "MCP-MANIFEST-DRIFT", "OWASP-ASI04")
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
         locked = ctx.baseline_for(target)
@@ -333,7 +335,7 @@ class LaunchDriftRule(Rule):
     title = "MCP server changed since the reviewed baseline"
     category = Category.RUG_PULL
     default_severity = Severity.HIGH
-    mappings = ("MCP-RUG-PULL", "MCP-SUPPLY-CHAIN")
+    mappings = ("MCP-RUG-PULL", "MCP-SUPPLY-CHAIN", "OWASP-ASI04")
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
         if ctx.baseline is None:
@@ -361,3 +363,48 @@ class LaunchDriftRule(Rule):
                     "review — the shape of a supply-chain swap. " + _REREVIEW
                 ),
             )
+        yield from self._reach_drift(target, ctx, locked)
+
+    def _reach_drift(
+        self, target: MCPServerSpec, ctx: AnalysisContext, locked: LockEntry
+    ) -> Iterator[Finding]:
+        """What the server can reach — outbound hosts, OAuth issuers and scopes — vs review."""
+        if locked.egress is not None and target.source_path:
+            new = sorted(set(egress_hosts(target, ctx)) - set(locked.egress))
+            if new:
+                yield self.finding(
+                    title="New outbound destination in server source since review",
+                    location=Location(server=target.name, field="source"),
+                    evidence=truncate("now also contacts: " + ", ".join(new), 300),
+                    remediation=(
+                        "The server's code talks to a host it didn't at review. Confirm the host "
+                        "belongs to the server's purpose before trusting the update. " + _REREVIEW
+                    ),
+                )
+        meta = ctx.auth_metadata
+        if meta is None or meta.resource_metadata is None:
+            return
+        if locked.auth_issuers is not None and set(meta.issuers) != set(locked.auth_issuers):
+            yield self.finding(
+                title="Authorization server changed since review",
+                location=Location(server=target.name, field="oauth:authorization_servers"),
+                evidence=truncate(
+                    f"was: {', '.join(locked.auth_issuers) or '(none)'} now: "
+                    f"{', '.join(meta.issuers) or '(none)'}", 300,
+                ),
+                remediation=(
+                    "Credentials are bound to the issuer that minted them (MCP 2026-07-28, "
+                    "SEP-2352): re-register with the new issuer only after confirming it is "
+                    "legitimate. " + _REREVIEW
+                ),
+            )
+        if locked.auth_scopes is not None:
+            wider = sorted(set(scopes_of(meta)) - set(locked.auth_scopes))
+            if wider:
+                yield self.finding(
+                    title="Server requests wider OAuth scopes than reviewed",
+                    location=Location(server=target.name, field="oauth:scopes_supported"),
+                    evidence=truncate("new scopes: " + ", ".join(wider), 300),
+                    remediation="Grant only the reviewed scopes until the change is reviewed. " + _REREVIEW,
+                    severity=Severity.MEDIUM,
+                )

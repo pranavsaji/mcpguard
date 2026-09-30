@@ -7,11 +7,16 @@ import { parseLaunch } from "./launchers";
 import { INVISIBLE_CHAR_SET } from "./patterns";
 import {
   type RuleContext,
+  cacheHints,
+  editDistance,
   excessiveAgency,
+  headerMirroring,
   hiddenContent,
   launchConfig,
   pinning,
+  provenance,
   secrets,
+  skeleton,
   toolPoisoning,
   toolShadowing,
   toxicFlow,
@@ -794,5 +799,80 @@ describe("parser and engine robustness", () => {
         .map((line) => line.replace(/\/\/ .*$/, ""));
       expect(code.filter((line) => /[^\x00-\x7e]/.test(line)), file).toEqual([]);
     }
+  });
+});
+
+describe("SUP03 publisher provenance", () => {
+  const npx = (pkg: string) => launch("npx", ["-y", pkg]);
+  it("flags scope and name lookalikes at high", () => {
+    expect(provenance(npx("@modeIcontextprotocol/server-memory@1.0.0"))[0].title).toBe(
+      "npm scope imitates a trusted MCP publisher",
+    );
+    expect(provenance(npx("mcp-rernote@0.1.30"))[0]).toMatchObject({ severity: "high", evidence: "mcp-rernote looks like mcp-remote" });
+  });
+  it("flags one-edit typosquats at medium and brand names at low", () => {
+    expect(provenance(npx("firecrawl-mpc@1.0.0"))[0]).toMatchObject({ severity: "medium", confidence: 0.6 });
+    expect(provenance(npx("postmark-mcp@1.0.16"))[0]).toMatchObject({ severity: "low", confidence: 0.4 });
+  });
+  it.each([
+    ["npx", ["-y", "@modelcontextprotocol/server-memory@1.0.0"]],
+    ["npx", ["-y", "@modelcontextprotocol/server-memroy"]],
+    ["npx", ["-y", "@stripe/mcp@0.2.0"]],
+    ["uvx", ["mcp-server-fetch==2025.4.7"]],
+    ["uvx", ["--from", "git+https://github.com/someone/github-mcp.git", "github-mcp"]],
+    ["uvx", ["awslabs.aws-documentation-mcp-server@1.0.0"]],
+    ["node", ["./server.js"]],
+  ])("leaves %s %j alone", (command, args) => {
+    expect(provenance(launch(command, args))).toEqual([]);
+  });
+  it("folds lookalike characters and bounds the edit distance", () => {
+    expect(skeleton("mcp-rernote")).toBe(skeleton("mcp_remote"));
+    expect(editDistance("firecrawl-mcp", "firecrawl-mpc")).toBe(1);
+    expect(editDistance("abc", "abcdef", 2)).toBe(3);
+  });
+});
+
+describe("HDR01 x-mcp-header / CACHE01 cache hints", () => {
+  const hdr = (properties: Record<string, unknown>) =>
+    headerMirroring(specWithTools([{ name: "t", inputSchema: { type: "object", properties } }]));
+  it("accepts valid designations, including nested properties", () => {
+    expect(
+      hdr({
+        region: { type: "string", "x-mcp-header": "Region" },
+        opts: { type: "object", properties: { tier: { type: ["integer", "null"], "x-mcp-header": "Tier" } } },
+      }),
+    ).toEqual([]);
+  });
+  it("flags CR/LF at high and malformed designations at medium", () => {
+    expect(hdr({ a: { type: "string", "x-mcp-header": "A\nB" } })[0].severity).toBe("high");
+    expect(hdr({ a: { type: "string", "x-mcp-header": "" } })[0].evidence).toContain("non-empty string");
+    expect(hdr({ a: { type: [{}], "x-mcp-header": "A" } })[0].evidence).toBe(
+      "x-mcp-header='A': type {} cannot be mirrored (string, integer, boolean only)",
+    );
+    expect(hdr({ t: { type: "array", items: { type: "string", "x-mcp-header": "T" } } })[0].location.field).toBe(
+      "inputSchema.properties.t.items",
+    );
+  });
+  it("flags credentials mirrored into a header", () => {
+    expect(hdr({ password: { type: "string", "x-mcp-header": "Pw" } })[0].title).toBe(
+      "Credential-bearing parameter mirrored into an HTTP header",
+    );
+  });
+  const cached = (manifest: object, over: Partial<MCPServerSpec> = {}) =>
+    cacheHints({ ...parseConfig({ url: "https://x/mcp", tools: [], ...manifest })[0], ...over });
+  it("flags public caching of an authenticated list, not an anonymous or private one", () => {
+    const auth = { headers: { Authorization: "Bearer ${T}" } };
+    expect(cached({ cacheScope: "public" }, auth)[0].severity).toBe("medium");
+    expect(cached({ cacheScope: "public" })).toEqual([]);
+    expect(cached({ cacheScope: "private" }, auth)).toEqual([]);
+    expect(cacheHints(launch("npx", ["-y", "mcp-remote@0.1.30", "https://x", "--header", "Authorization: Bearer ${T}"], {
+      manifest: { instructions: "", tools: [], resources: [], prompts: [], cacheScope: "public" },
+    }))[0].evidence).toBe("cacheScope=public; requests carry Authorization header (bridge argument)");
+  });
+  it("flags only long ttlMs, rounding half to even like Python", () => {
+    expect(cached({ ttlMs: 60_000 })).toEqual([]);
+    expect(cached({ ttlMs: 88_200_000 })[0].evidence).toBe("ttlMs=88200000 (~24h)");
+    expect(cached({ ttlMs: 91_800_000 })[0].evidence).toBe("ttlMs=91800000 (~26h)");
+    expect(cached({ ttlMs: true })).toEqual([]);
   });
 });

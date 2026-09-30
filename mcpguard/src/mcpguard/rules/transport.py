@@ -27,7 +27,7 @@ from .base import Rule, register
 BRIDGE_PACKAGES: frozenset[str] = frozenset({"mcp-remote", "supergateway", "mcp-proxy"})
 
 
-def _endpoints(spec: MCPServerSpec) -> Iterator[tuple[str, str]]:
+def remote_endpoints(spec: MCPServerSpec) -> Iterator[tuple[str, str]]:
     """``(field, url)`` for every remote MCP endpoint this entry talks to."""
     if spec.url:
         yield "url", spec.url
@@ -44,10 +44,10 @@ class TransportRule(Rule):
     title = "Plaintext HTTP connection to a remote MCP server"
     category = Category.INSECURE_TRANSPORT
     default_severity = Severity.HIGH
-    mappings = ("CWE-319", "MCP-TRANSPORT-SECURITY")
+    mappings = ("CWE-319", "MCP-TRANSPORT-SECURITY", "OWASP-ASI03")
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
-        for field, url in _endpoints(target):
+        for field, url in remote_endpoints(target):
             try:
                 parsed = urlparse(url)
                 host = parsed.hostname or ""

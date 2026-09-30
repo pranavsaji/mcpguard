@@ -106,6 +106,19 @@
       "target": "mailer"
     },
     {
+      "rule_id": "SUP03",
+      "title": "MCP package named after Postmark is not from its publisher",
+      "severity": "low",
+      "category": "supply_chain",
+      "location": {
+        "server": "mailer",
+        "field": "command"
+      },
+      "evidence": "postmark-mcp: Postmark publishes under no verified package scope",
+      "confidence": 0.4,
+      "target": "mailer"
+    },
+    {
       "rule_id": "TP01",
       "title": "Possible data-exfiltration directive in tool metadata",
       "severity": "critical",
@@ -440,6 +453,196 @@
       "evidence": "https://mcp.example.com/sse",
       "confidence": 1.0,
       "target": "legacy"
+    },
+    {
+      "rule_id": "SUP03",
+      "title": "npm scope imitates a trusted MCP publisher",
+      "severity": "high",
+      "category": "supply_chain",
+      "location": {
+        "server": "scope-squat",
+        "field": "command"
+      },
+      "evidence": "@model-context-protocol/server-memory: scope @model-context-protocol looks like @modelcontextprotocol",
+      "confidence": 1.0,
+      "target": "scope-squat"
+    },
+    {
+      "rule_id": "SUP03",
+      "title": "Package name is a lookalike of a well-known MCP server",
+      "severity": "high",
+      "category": "supply_chain",
+      "location": {
+        "server": "name-squat",
+        "field": "command"
+      },
+      "evidence": "mcp-rernote looks like mcp-remote",
+      "confidence": 1.0,
+      "target": "name-squat"
+    },
+    {
+      "rule_id": "SUP03",
+      "title": "Package name is one edit from a well-known MCP server",
+      "severity": "medium",
+      "category": "supply_chain",
+      "location": {
+        "server": "typo-squat",
+        "field": "command"
+      },
+      "evidence": "firecrawl-mpc vs firecrawl-mcp",
+      "confidence": 0.6,
+      "target": "typo-squat"
+    },
+    {
+      "rule_id": "SUP03",
+      "title": "MCP package named after Stripe is not from its publisher",
+      "severity": "low",
+      "category": "supply_chain",
+      "location": {
+        "server": "brand",
+        "field": "command"
+      },
+      "evidence": "stripe-mcp-server: Stripe publishes under @stripe",
+      "confidence": 0.4,
+      "target": "brand"
+    },
+    {
+      "rule_id": "HDR01",
+      "title": "x-mcp-header value contains control characters (header injection)",
+      "severity": "high",
+      "category": "insecure_transport",
+      "location": {
+        "server": "headers",
+        "tool": "region_lookup",
+        "field": "param:inject"
+      },
+      "evidence": "x-mcp-header='X\\r\\nSet-Cookie: a=b'",
+      "confidence": 1.0,
+      "target": "headers"
+    },
+    {
+      "rule_id": "HDR01",
+      "title": "Invalid x-mcp-header designation (clients must reject this tool)",
+      "severity": "medium",
+      "category": "insecure_transport",
+      "location": {
+        "server": "headers",
+        "tool": "region_lookup",
+        "field": "param:zone"
+      },
+      "evidence": "x-mcp-header='region': duplicates the header name used by region (case-insensitive)",
+      "confidence": 1.0,
+      "target": "headers"
+    },
+    {
+      "rule_id": "HDR01",
+      "title": "Invalid x-mcp-header designation (clients must reject this tool)",
+      "severity": "medium",
+      "category": "insecure_transport",
+      "location": {
+        "server": "headers",
+        "tool": "region_lookup",
+        "field": "param:label"
+      },
+      "evidence": "x-mcp-header='Bad Header': the header name is not an HTTP field-name token",
+      "confidence": 1.0,
+      "target": "headers"
+    },
+    {
+      "rule_id": "HDR01",
+      "title": "Invalid x-mcp-header designation (clients must reject this tool)",
+      "severity": "medium",
+      "category": "insecure_transport",
+      "location": {
+        "server": "headers",
+        "tool": "region_lookup",
+        "field": "param:ratio"
+      },
+      "evidence": "x-mcp-header='Ratio': type number cannot be mirrored (string, integer, boolean only)",
+      "confidence": 1.0,
+      "target": "headers"
+    },
+    {
+      "rule_id": "HDR01",
+      "title": "Invalid x-mcp-header designation (clients must reject this tool)",
+      "severity": "medium",
+      "category": "insecure_transport",
+      "location": {
+        "server": "headers",
+        "tool": "region_lookup",
+        "field": "param:flag"
+      },
+      "evidence": "x-mcp-header='Flag': the parameter declares no primitive type",
+      "confidence": 1.0,
+      "target": "headers"
+    },
+    {
+      "rule_id": "HDR01",
+      "title": "Credential-bearing parameter mirrored into an HTTP header",
+      "severity": "medium",
+      "category": "insecure_transport",
+      "location": {
+        "server": "headers",
+        "tool": "region_lookup",
+        "field": "param:api_token"
+      },
+      "evidence": "api_token -> Mcp-Param-Token",
+      "confidence": 1.0,
+      "target": "headers"
+    },
+    {
+      "rule_id": "HDR01",
+      "title": "Invalid x-mcp-header designation (clients must reject this tool)",
+      "severity": "medium",
+      "category": "insecure_transport",
+      "location": {
+        "server": "headers",
+        "tool": "region_lookup",
+        "field": "inputSchema.properties.tags.items"
+      },
+      "evidence": "x-mcp-header at properties.tags.items: not reachable from the schema root through 'properties' alone (items / anyOf / $ref / if-then are not allowed)",
+      "confidence": 1.0,
+      "target": "headers"
+    },
+    {
+      "rule_id": "HDR01",
+      "title": "Invalid x-mcp-header designation (clients must reject this tool)",
+      "severity": "medium",
+      "category": "insecure_transport",
+      "location": {
+        "server": "headers",
+        "tool": "region_lookup",
+        "field": "inputSchema.properties.mode.anyOf[0]"
+      },
+      "evidence": "x-mcp-header at properties.mode.anyOf[0]: not reachable from the schema root through 'properties' alone (items / anyOf / $ref / if-then are not allowed)",
+      "confidence": 1.0,
+      "target": "headers"
+    },
+    {
+      "rule_id": "CACHE01",
+      "title": "Authenticated tool list marked cacheScope: public",
+      "severity": "medium",
+      "category": "rug_pull",
+      "location": {
+        "server": "cached",
+        "field": "cacheScope"
+      },
+      "evidence": "cacheScope=public; requests carry Authorization header",
+      "confidence": 1.0,
+      "target": "cached"
+    },
+    {
+      "rule_id": "CACHE01",
+      "title": "Tool list cache hint weakens change detection",
+      "severity": "low",
+      "category": "rug_pull",
+      "location": {
+        "server": "cached",
+        "field": "ttlMs"
+      },
+      "evidence": "ttlMs=88200000 (~24h)",
+      "confidence": 1.0,
+      "target": "cached"
     }
   ]
 }

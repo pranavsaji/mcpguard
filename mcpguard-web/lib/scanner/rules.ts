@@ -3,13 +3,13 @@
  * `(spec, ctx) => Finding[]` mirroring one Python rule module; `ctx.peers`
  * carries every server in the config for the cross-server rules (TP03, FLOW01).
  *
- * Browser-runnable: CAP01, CFG01, FLOW01, NET01, SEC01, SUP01, SUP02, TP01,
- * TP02, TP03. Source-scan (CMD01), live/baseline drift (MAN01, MAN02), and
+ * Browser-runnable: CACHE01, CAP01, CFG01, FLOW01, HDR01, NET01, SEC01, SUP01,
+ * SUP02, SUP03, TP01, TP02, TP03. Source-scan (CMD01), live/baseline drift (MAN01, MAN02), and
  * SUP02's installed-package.json lookup need a filesystem or a live connection
  * and stay in the CLI.
  */
 
-import { findAdvisories, versionMatches, type Advisory } from "./advisories";
+import { canonicalPackage, findAdvisories, versionMatches, type Advisory } from "./advisories";
 import {
   containsPhrase,
   decodeBase64Payloads,
@@ -31,6 +31,7 @@ import {
   ALL_INTERFACES_RE,
   API_BASE_URL_ENV,
   AUTH_HEADER_NAME_RE,
+  BRAND_PUBLISHERS,
   CAPABILITY_KEYWORDS,
   CODE_INJECTION_ENV,
   CODE_LOADING_OPTION_ENV,
@@ -41,10 +42,13 @@ import {
   DOCKER_SOCKET_RE,
   DOWNLOADER_RE,
   EXTERNAL_SINK_KEYWORDS,
+  HEADER_PARAM_TYPES,
   HOME_PATH_RE,
   HOST_FLAGS,
+  HTTP_TOKEN_RE,
   IOC_SUBSTRINGS,
   KNOWN_SERVER_ROLES,
+  LONG_CACHE_TTL_MS,
   LOOPBACK_HOST_RE,
   PRIVATE_DATA_KEYWORDS,
   PRIVILEGE_ESCALATION_COMMANDS,
@@ -57,10 +61,12 @@ import {
   SECRET_VALUE_PATTERNS,
   TLS_DISABLE_ENV,
   TOOL_NAME_RE,
+  TRUSTED_SCOPES,
   UNTRUSTED_INPUT_KEYWORDS,
   URL_SCRIPT_RUNNERS,
   URL_SECRET_PARAM_RE,
   URL_USERINFO_RE,
+  WELL_KNOWN_PACKAGES,
   looksLikePlaceholder,
 } from "./patterns";
 import {
@@ -68,7 +74,9 @@ import {
   orderedEntries,
   pyRe,
   pyRepr,
+  pyReprValue,
   pySorted,
+  pyStr,
   pyStrip,
   pyUnicodeEscape,
   reEscape,
@@ -181,7 +189,7 @@ const TP01: RuleMeta = {
   title: "Prompt injection in tool metadata",
   category: "tool_poisoning",
   severity: "high",
-  mappings: ["OWASP-LLM01", "MCP-TOOL-POISONING"],
+  mappings: ["OWASP-LLM01", "MCP-TOOL-POISONING", "OWASP-ASI01"],
 };
 
 export const toolPoisoning: Rule = (spec) => {
@@ -258,7 +266,7 @@ const TP02: RuleMeta = {
   title: "Hidden or invisible content in tool metadata",
   category: "hidden_content",
   severity: "high",
-  mappings: ["OWASP-LLM01", "MCP-TOOL-POISONING"],
+  mappings: ["OWASP-LLM01", "MCP-TOOL-POISONING", "OWASP-ASI01"],
 };
 
 export const hiddenContent: Rule = (spec) => {
@@ -350,7 +358,7 @@ const TP03: RuleMeta = {
   title: "Tool shadowing: metadata steers another server's tools",
   category: "tool_shadowing",
   severity: "high",
-  mappings: ["OWASP-LLM01", "MCP-TOOL-SHADOWING"],
+  mappings: ["OWASP-LLM01", "MCP-TOOL-SHADOWING", "OWASP-ASI01"],
 };
 
 // A tool name is only "distinctive" enough to count as a reference when it can't
@@ -491,7 +499,7 @@ const CAP01: RuleMeta = {
   title: "Tool exposes a dangerous capability",
   category: "excessive_agency",
   severity: "medium",
-  mappings: ["OWASP-AGENTIC-EXCESSIVE-AGENCY"],
+  mappings: ["OWASP-AGENTIC-EXCESSIVE-AGENCY", "OWASP-ASI02", "OWASP-ASI03"],
 };
 
 const MUTATING_CAPABILITIES = new Set(["code execution", "shell / command", "filesystem write", "database"]);
@@ -569,7 +577,7 @@ const FLOW01: RuleMeta = {
   title: "Lethal trifecta: untrusted input + private data + exfiltration path",
   category: "toxic_flow",
   severity: "high",
-  mappings: ["OWASP-LLM01", "MCP-TOXIC-FLOW", "OWASP-AGENTIC-EXCESSIVE-AGENCY"],
+  mappings: ["OWASP-LLM01", "MCP-TOXIC-FLOW", "OWASP-AGENTIC-EXCESSIVE-AGENCY", "OWASP-ASI01", "OWASP-ASI02"],
 };
 
 const UNTRUSTED = "untrusted";
@@ -726,7 +734,7 @@ const SEC01: RuleMeta = {
   title: "Plaintext secret in server config env",
   category: "secrets",
   severity: "high",
-  mappings: ["CWE-798", "MCP-SECRETS"],
+  mappings: ["CWE-798", "MCP-SECRETS", "OWASP-ASI03"],
 };
 
 /** Show only enough of a secret to identify it, never the whole thing. */
@@ -864,7 +872,7 @@ const SUP01: RuleMeta = {
   title: "Unpinned or remote-fetched MCP server",
   category: "supply_chain",
   severity: "medium",
-  mappings: ["MCP-SUPPLY-CHAIN", "SLSA-PROVENANCE"],
+  mappings: ["MCP-SUPPLY-CHAIN", "SLSA-PROVENANCE", "OWASP-ASI04"],
 };
 
 const GIT_SPEC_RE = pyRe(String.raw`(?:^|\s)(?:git\+|github:)`, "i");
@@ -953,7 +961,7 @@ const SUP02: RuleMeta = {
   title: "MCP server package has a known vulnerability",
   category: "vulnerable_component",
   severity: "high",
-  mappings: ["CWE-1395", "MCP-SUPPLY-CHAIN"],
+  mappings: ["CWE-1395", "MCP-SUPPLY-CHAIN", "OWASP-ASI04"],
 };
 
 function assessAdvisory(
@@ -1045,7 +1053,7 @@ const CFG01: RuleMeta = {
   title: "Dangerous MCP server launch configuration",
   category: "insecure_config",
   severity: "high",
-  mappings: ["CWE-250", "MCP-LOCAL-SERVER-COMPROMISE"],
+  mappings: ["CWE-250", "MCP-LOCAL-SERVER-COMPROMISE", "OWASP-ASI05"],
 };
 
 const MOUNT_FLAGS = new Set(["-v", "--volume", "--mount"]);
@@ -1282,7 +1290,7 @@ const NET01: RuleMeta = {
   title: "Plaintext HTTP connection to a remote MCP server",
   category: "insecure_transport",
   severity: "high",
-  mappings: ["CWE-319", "MCP-TRANSPORT-SECURITY"],
+  mappings: ["CWE-319", "MCP-TRANSPORT-SECURITY", "OWASP-ASI03"],
 };
 
 // Local bridges whose URL argument is the remote MCP endpoint.
@@ -1337,15 +1345,356 @@ export const transport: Rule = (spec) => {
   return out;
 };
 
+// --- HDR01 / CACHE01: MCP 2026-07-28 protocol surface ------------------------
+
+const HDR01: RuleMeta = {
+  rule_id: "HDR01",
+  title: "Invalid x-mcp-header designation (clients must reject this tool)",
+  category: "insecure_transport",
+  severity: "medium",
+  mappings: ["MCP-2026-07-28-SEP-2243", "OWASP-ASI03", "CWE-113"],
+};
+
+const HEADER_KEY = "x-mcp-header";
+const MAX_HEADER_DEPTH = 32;
+
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === "object" && !Array.isArray(value);
+}
+
+function ownValue(obj: Record<string, unknown>, key: string): unknown {
+  return Object.prototype.hasOwnProperty.call(obj, key) ? obj[key] : undefined;
+}
+
+/** `[path, raw schema path, property schema]` for every property reachable via `properties` alone. */
+function reachable(
+  schema: unknown,
+  path = "",
+  raw = "",
+  depth = 0,
+): Array<[string, string, Record<string, unknown>]> {
+  const out: Array<[string, string, Record<string, unknown>]> = [];
+  if (depth > MAX_HEADER_DEPTH || !isJsonObject(schema)) return out;
+  const props = ownValue(schema, "properties");
+  if (!isJsonObject(props)) return out;
+  for (const [name, sub] of orderedEntries(props)) {
+    if (!isJsonObject(sub)) continue;
+    const child = path ? `${path}.${name}` : name;
+    const childRaw = raw ? `${raw}.properties.${name}` : `properties.${name}`;
+    out.push([child, childRaw, sub]);
+    out.push(...reachable(sub, child, childRaw, depth + 1));
+  }
+  return out;
+}
+
+/** Paths of every `x-mcp-header` key anywhere in a schema. */
+function allDesignations(node: unknown, path = "", depth = 0): string[] {
+  const out: string[] = [];
+  if (depth > MAX_HEADER_DEPTH) return out;
+  if (isJsonObject(node)) {
+    for (const [key, value] of orderedEntries(node)) {
+      const child = path ? `${path}.${key}` : key;
+      if (key === HEADER_KEY) out.push(path || "<root>");
+      out.push(...allDesignations(value, child, depth + 1));
+    }
+  } else if (Array.isArray(node)) {
+    node.forEach((item, index) => out.push(...allDesignations(item, `${path}[${index}]`, depth + 1)));
+  }
+  return out;
+}
+
+function headerTypeProblem(prop: Record<string, unknown>): string | null {
+  const declared = ownValue(prop, "type");
+  const types = typeof declared === "string" ? [declared] : Array.isArray(declared) ? declared : [];
+  const concrete = types.filter((t) => t !== "null");
+  if (!concrete.length) return "the parameter declares no primitive type";
+  const bad = concrete
+    .filter((t) => !(typeof t === "string" && HEADER_PARAM_TYPES.has(t)))
+    .map((t) => pyStr(t));
+  if (bad.length) return `type ${bad.join("/")} cannot be mirrored (string, integer, boolean only)`;
+  return null;
+}
+
+function isSecretParam(path: string, prop: Record<string, unknown>): boolean {
+  const name = path.slice(path.lastIndexOf(".") + 1);
+  const description = ownValue(prop, "description");
+  return SECRET_NAME_RE.test(name) || (typeof description === "string" && SECRET_NAME_RE.test(description));
+}
+
+function headerValueProblem(value: unknown, seen: Map<string, string>, path: string): string | null {
+  if (typeof value !== "string" || !value) return "the header name must be a non-empty string";
+  if (!HTTP_TOKEN_RE.test(value)) return "the header name is not an HTTP field-name token";
+  const key = value.toLowerCase();
+  if (!seen.has(key)) seen.set(key, path);
+  const first = seen.get(key)!;
+  if (first !== path) return `duplicates the header name used by ${first} (case-insensitive)`;
+  return null;
+}
+
+export const headerMirroring: Rule = (spec) => {
+  const manifest = spec.manifest;
+  if (!manifest) return [];
+  const out: Finding[] = [];
+  for (const tool of manifest.tools) {
+    const schema = tool.inputSchema;
+    const validPaths = new Set<string>();
+    const seen = new Map<string, string>();
+    for (const [path, raw, prop] of reachable(schema)) {
+      if (!Object.prototype.hasOwnProperty.call(prop, HEADER_KEY)) continue;
+      validPaths.add(raw);
+      const value = prop[HEADER_KEY];
+      const location = loc(spec.name, tool.name, `param:${path}`);
+      if (typeof value === "string" && ["\r", "\n", "\x00"].some((c) => value.includes(c))) {
+        out.push(
+          finding(HDR01, {
+            title: "x-mcp-header value contains control characters (header injection)",
+            location,
+            evidence: `${HEADER_KEY}=${pyReprValue(value)}`,
+            remediation:
+              "A header name carrying CR/LF can split the HTTP request a client sends. Treat the server as hostile; conforming clients must drop this tool.",
+            severity: "high",
+          }),
+        );
+        continue;
+      }
+      const problem = headerValueProblem(value, seen, path) ?? headerTypeProblem(prop);
+      if (problem) {
+        out.push(
+          finding(HDR01, {
+            location,
+            evidence: truncate(`${HEADER_KEY}=${pyReprValue(value)}: ${problem}`, 300),
+            remediation:
+              "Fix the tool definition: the header name must be a unique HTTP token on a string / integer / boolean parameter. Until then clients drop the tool.",
+          }),
+        );
+      } else if (isSecretParam(path, prop)) {
+        out.push(
+          finding(HDR01, {
+            title: "Credential-bearing parameter mirrored into an HTTP header",
+            location,
+            evidence: `${path} -> Mcp-Param-${pyStr(value)}`,
+            remediation:
+              "Headers are copied into proxy, WAF, CDN, and access logs. Do not mirror secrets; pass them in the body or through the authorization flow.",
+          }),
+        );
+      }
+    }
+    for (const path of allDesignations(schema)) {
+      if (!validPaths.has(path)) {
+        out.push(
+          finding(HDR01, {
+            location: loc(spec.name, tool.name, `inputSchema.${path}`),
+            evidence: `${HEADER_KEY} at ${path}: not reachable from the schema root through 'properties' alone (items / anyOf / $ref / if-then are not allowed)`,
+            remediation:
+              "Move the designation onto a top-level or nested 'properties' parameter, or remove it. Clients must reject tools with misplaced designations.",
+          }),
+        );
+      }
+    }
+  }
+  return out;
+};
+
+const CACHE01: RuleMeta = {
+  rule_id: "CACHE01",
+  title: "Tool list cache hint weakens change detection",
+  category: "rug_pull",
+  severity: "low",
+  mappings: ["MCP-2026-07-28-SEP-2549", "MCP-RUG-PULL", "OWASP-ASI04"],
+};
+
+/** Evidence that requests to this server carry credentials, if any. */
+function authenticated(spec: MCPServerSpec): string | null {
+  for (const [name] of orderedEntries(spec.headers)) {
+    if (AUTH_HEADER_NAME_RE.test(name)) return `${name} header`;
+  }
+  if (spec.url && (URL_USERINFO_RE.test(spec.url) || URL_SECRET_PARAM_RE.test(spec.url))) {
+    return "credentials in the URL";
+  }
+  for (let i = 0; i < spec.args.length; i++) {
+    if (spec.args[i] === "--header" && i + 1 < spec.args.length) {
+      const header = pyStrip(partition(spec.args[i + 1], ":")[0]);
+      if (AUTH_HEADER_NAME_RE.test(header)) return `${header} header (bridge argument)`;
+    }
+  }
+  return null;
+}
+
+/** Python `f"{x:.0f}"`: round half to even. */
+function formatRound0(x: number): string {
+  const floor = Math.floor(x);
+  const diff = x - floor;
+  const rounded = diff > 0.5 ? floor + 1 : diff < 0.5 ? floor : floor % 2 === 0 ? floor : floor + 1;
+  return rounded.toFixed(0);
+}
+
+export const cacheHints: Rule = (spec) => {
+  const manifest = spec.manifest;
+  if (!manifest) return [];
+  const out: Finding[] = [];
+  const auth = authenticated(spec);
+  if (manifest.cacheScope === "public" && auth) {
+    out.push(
+      finding(CACHE01, {
+        title: "Authenticated tool list marked cacheScope: public",
+        location: loc(spec.name, null, "cacheScope"),
+        evidence: `cacheScope=public; requests carry ${auth}`,
+        remediation:
+          "Shared caches may store this per-user catalog and serve it to other users, and a poisoned copy outlives the fix. Serve authenticated lists with cacheScope: private.",
+        severity: "medium",
+      }),
+    );
+  }
+  const ttl = manifest.ttlMs;
+  if (ttl !== undefined && ttl !== null && ttl > LONG_CACHE_TTL_MS) {
+    out.push(
+      finding(CACHE01, {
+        location: loc(spec.name, null, "ttlMs"),
+        evidence: `ttlMs=${ttl} (~${formatRound0(ttl / 3_600_000)}h)`,
+        remediation:
+          "Clients may keep serving a cached tool list this long, so a changed definition is invisible to them until it expires. A cached list is not a reviewed one: pin it with `mcpguard lock` and re-check on every connect.",
+      }),
+    );
+  }
+  return out;
+};
+
+// --- SUP03: publisher provenance (impersonation, typosquats) ------------------
+
+const SUP03: RuleMeta = {
+  rule_id: "SUP03",
+  title: "MCP server package imitates a trusted publisher",
+  category: "supply_chain",
+  severity: "high",
+  mappings: ["MCP-SUPPLY-CHAIN", "OWASP-ASI04", "CWE-1357"],
+};
+
+const MIN_TYPO_LENGTH = 8; // shorter names collide with legitimate ones too often
+const SKELETON_FOLD: Record<string, string> = { "0": "o", "1": "l", i: "l", "3": "e", "5": "s" };
+
+/** A name with separators dropped and common lookalike characters folded. */
+export function skeleton(name: string): string {
+  const folded = name.toLowerCase().split("rn").join("m").split("vv").join("w");
+  return codePoints(folded)
+    .map((c) => lookup(SKELETON_FOLD, c) ?? c)
+    .filter((c) => !"-_.".includes(c))
+    .join("");
+}
+
+/** Optimal-string-alignment distance, returning `limit + 1` once it's exceeded. */
+export function editDistance(aText: string, bText: string, limit = 2): number {
+  const a = codePoints(aText);
+  const b = codePoints(bText);
+  if (Math.abs(a.length - b.length) > limit) return limit + 1;
+  let prev2: number[] = [];
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i, ...new Array<number>(b.length).fill(0)];
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) {
+        cur[j] = Math.min(cur[j], prev2[j - 2] + 1);
+      }
+    }
+    if (Math.min(...cur) > limit) return limit + 1;
+    prev2 = prev;
+    prev = cur;
+  }
+  return prev[prev.length - 1];
+}
+
+export const provenance: Rule = (spec) => {
+  const launch = parseLaunch(spec.command, spec.args);
+  // Local paths have no publisher; URL / git specs are SUP01's (fetch-and-run).
+  if (launch === null || launch.isLocal || REMOTE_FETCH_RE.test(launch.spec)) return [];
+  const eco = launch.ecosystem;
+  const name = canonicalPackage(eco, launch.name);
+  const known = new Set([...(lookup(WELL_KNOWN_PACKAGES, eco) ?? [])].map((k) => canonicalPackage(eco, k)));
+  if (known.has(name)) return [];
+  const location = loc(spec.name, null, "command");
+  const scope = name.startsWith("@") && name.includes("/") ? name.split("/", 1)[0] : null;
+  const verify =
+    "Confirm the publisher before running it: check the package's repository, maintainers, and release history against the vendor's own documentation.";
+
+  if (scope !== null && !TRUSTED_SCOPES.has(scope)) {
+    for (const trusted of pySorted(TRUSTED_SCOPES)) {
+      if (skeleton(scope) === skeleton(trusted) || (codePoints(trusted).length >= 12 && editDistance(scope, trusted) <= 2)) {
+        return [
+          finding(SUP03, {
+            title: "npm scope imitates a trusted MCP publisher",
+            location,
+            evidence: `${launch.name}: scope ${scope} looks like ${trusted}`,
+            remediation: `This is not ${trusted}. Remove the server. ${verify}`,
+          }),
+        ];
+      }
+    }
+  }
+
+  if (scope === null || !TRUSTED_SCOPES.has(scope)) {
+    for (const knownName of pySorted(known)) {
+      if (codePoints(knownName).length < MIN_TYPO_LENGTH) continue;
+      if (skeleton(name) === skeleton(knownName)) {
+        return [
+          finding(SUP03, {
+            title: "Package name is a lookalike of a well-known MCP server",
+            location,
+            evidence: `${launch.name} looks like ${knownName}`,
+            remediation: `Did you mean ${knownName}? ${verify}`,
+          }),
+        ];
+      }
+      if (editDistance(name, knownName, 1) === 1) {
+        return [
+          finding(SUP03, {
+            title: "Package name is one edit from a well-known MCP server",
+            location,
+            evidence: `${launch.name} vs ${knownName}`,
+            remediation: `Did you mean ${knownName}? ${verify}`,
+            severity: "medium",
+            confidence: 0.6,
+          }),
+        ];
+      }
+    }
+  }
+
+  const nameWords = new Set(words(name));
+  if (!nameWords.has("mcp")) return [];
+  const raw = launch.name.toLowerCase();
+  for (const brand of pySorted(Object.keys(BRAND_PUBLISHERS))) {
+    if (!nameWords.has(brand)) continue;
+    const publishers = BRAND_PUBLISHERS[brand];
+    if (publishers.some((p) => raw.startsWith(p) || name.startsWith(canonicalPackage(eco, p)))) return [];
+    const title = brand.charAt(0).toUpperCase() + brand.slice(1);
+    const official = publishers.length ? publishers.join(" or ") : "no verified package scope";
+    return [
+      finding(SUP03, {
+        title: `MCP package named after ${title} is not from its publisher`,
+        location,
+        evidence: `${launch.name}: ${title} publishes under ${official}`,
+        remediation: `Brand names are free to register: postmark-mcp impersonated Postmark and stole mail. ${verify}`,
+        severity: "low",
+        confidence: 0.4,
+      }),
+    ];
+  }
+  return [];
+};
+
 /** Every browser-runnable rule, in id order (the Python engine runs rules sorted by id). */
 export const RULES: ReadonlyArray<{ id: string; run: Rule }> = [
+  { id: "CACHE01", run: cacheHints },
   { id: "CAP01", run: excessiveAgency },
   { id: "CFG01", run: launchConfig },
   { id: "FLOW01", run: toxicFlow },
+  { id: "HDR01", run: headerMirroring },
   { id: "NET01", run: transport },
   { id: "SEC01", run: secrets },
   { id: "SUP01", run: pinning },
   { id: "SUP02", run: vulnerablePackages },
+  { id: "SUP03", run: provenance },
   { id: "TP01", run: toolPoisoning },
   { id: "TP02", run: hiddenContent },
   { id: "TP03", run: toolShadowing },

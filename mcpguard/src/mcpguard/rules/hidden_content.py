@@ -32,7 +32,7 @@ class HiddenContentRule(Rule):
     title = "Hidden or invisible content in tool metadata"
     category = Category.HIDDEN_CONTENT
     default_severity = Severity.HIGH
-    mappings = ("OWASP-LLM01", "MCP-TOOL-POISONING")
+    mappings = ("OWASP-LLM01", "MCP-TOOL-POISONING", "OWASP-ASI01")
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
         manifest = ctx.effective_manifest(target)

@@ -153,7 +153,9 @@ class ToxicFlowRule(Rule):
     title = "Lethal trifecta: untrusted input + private data + exfiltration path"
     category = Category.TOXIC_FLOW
     default_severity = Severity.HIGH
-    mappings = ("OWASP-LLM01", "MCP-TOXIC-FLOW", "OWASP-AGENTIC-EXCESSIVE-AGENCY")
+    mappings = (
+        "OWASP-LLM01", "MCP-TOXIC-FLOW", "OWASP-AGENTIC-EXCESSIVE-AGENCY", "OWASP-ASI01", "OWASP-ASI02",
+    )
 
     def analyze(self, target: MCPServerSpec, ctx: AnalysisContext) -> Iterable[Finding]:
         peers = ctx.peers or ((target, ctx.effective_manifest(target)),)

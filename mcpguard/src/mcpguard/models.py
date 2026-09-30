@@ -369,13 +369,16 @@ class MCPManifest:
 
     May be sourced statically (from a declared manifest) or dynamically (by
     connecting and enumerating). ``instructions`` is the server-level system
-    prompt many servers expose.
+    prompt many servers expose. ``ttl_ms`` / ``cache_scope`` are the MCP
+    2026-07-28 list-result cache hints (``ttlMs`` / ``cacheScope``), when served.
     """
 
     instructions: str = ""
     tools: tuple[MCPTool, ...] = ()
     resources: tuple[MCPResource, ...] = ()
     prompts: tuple[MCPPrompt, ...] = ()
+    ttl_ms: int | None = None
+    cache_scope: str = ""
 
     def text_fields(self) -> list[tuple[str | None, str, str]]:
         """Every model-visible string as ``(owner, field, text)``.

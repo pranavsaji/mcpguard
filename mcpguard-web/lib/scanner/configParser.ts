@@ -62,8 +62,21 @@ function parsePrompt(p: Json): MCPPrompt {
   return { name: getStr(p, "name"), description: getStr(p, "description"), arguments: args };
 }
 
+/**
+ * Python: `ttl if isinstance(ttl, int) and not isinstance(ttl, bool) else None`.
+ * JSON.parse can't tell `5.0` (a Python float, ignored) from `5`; a whole-number
+ * float literal is the one input where the engines can differ.
+ */
+function cacheTtl(data: Json): number | null {
+  const ttl = has(data, "ttlMs") ? get(data, "ttlMs") : get(data, "ttl_ms");
+  return typeof ttl === "number" && Number.isInteger(ttl) ? ttl : null;
+}
+
 export function parseManifest(data: Json): MCPManifest {
+  const scope = has(data, "cacheScope") ? get(data, "cacheScope") : get(data, "cache_scope");
   return {
+    ttlMs: cacheTtl(data),
+    cacheScope: typeof scope === "string" ? scope : "",
     instructions: getStr(data, "instructions"),
     tools: asArray(get(data, "tools")).map(parseTool),
     resources: asArray(get(data, "resources")).map((r) => ({

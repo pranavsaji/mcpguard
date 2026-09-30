@@ -142,6 +142,114 @@
     "legacy": {
       "type": "sse",
       "url": "https://mcp.example.com/sse"
+    },
+    "scope-squat": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@model-context-protocol/server-memory@1.0.0"
+      ]
+    },
+    "name-squat": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "mcp-rernote@0.1.30",
+        "https://mcp.example.com/mcp"
+      ]
+    },
+    "typo-squat": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "firecrawl-mpc@1.0.0"
+      ]
+    },
+    "brand": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "stripe-mcp-server@2.0.0"
+      ]
+    },
+    "headers": {
+      "url": "https://mcp.example.com/hdr",
+      "tools": [
+        {
+          "name": "region_lookup",
+          "description": "Looks up a region.",
+          "inputSchema": {
+            "type": "object",
+            "properties": {
+              "region": {
+                "type": "string",
+                "x-mcp-header": "Region"
+              },
+              "zone": {
+                "type": "string",
+                "x-mcp-header": "region"
+              },
+              "label": {
+                "type": "string",
+                "x-mcp-header": "Bad Header"
+              },
+              "ratio": {
+                "type": "number",
+                "x-mcp-header": "Ratio"
+              },
+              "flag": {
+                "x-mcp-header": "Flag"
+              },
+              "inject": {
+                "type": "string",
+                "x-mcp-header": "X\r\nSet-Cookie: a=b"
+              },
+              "api_token": {
+                "type": "string",
+                "x-mcp-header": "Token"
+              },
+              "opts": {
+                "type": "object",
+                "properties": {
+                  "tier": {
+                    "type": "integer",
+                    "x-mcp-header": "Tier"
+                  }
+                }
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "x-mcp-header": "Tag"
+                }
+              },
+              "mode": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "x-mcp-header": "Mode"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "cached": {
+      "url": "https://mcp.example.com/cache",
+      "headers": {
+        "Authorization": "Bearer ${MCP_TOKEN}"
+      },
+      "cacheScope": "public",
+      "ttlMs": 88200000,
+      "tools": [
+        {
+          "name": "status_check",
+          "description": "Reports service status."
+        }
+      ]
     }
   }
 }

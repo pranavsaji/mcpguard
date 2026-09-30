@@ -41,7 +41,7 @@ __all__ = ["RULE_ID", "extract_text", "hook_response", "inspect_output"]
 
 RULE_ID = "IPI01"
 MAX_TEXT_CHARS = 2_000_000  # bound work on huge tool results
-_MAPPINGS = ("OWASP-LLM01", "MCP-INDIRECT-PROMPT-INJECTION")
+_MAPPINGS = ("OWASP-LLM01", "MCP-INDIRECT-PROMPT-INJECTION", "OWASP-ASI01")
 # Content-block bookkeeping keys, not content ({"type": "text", "text": ...}).
 _METADATA_KEYS = frozenset({"type", "mimeType"})
 _TOKEN_RE = re.compile(r"^[\w.+/-]{1,64}$")

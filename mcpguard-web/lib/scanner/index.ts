@@ -13,6 +13,9 @@ export const RULE_CATALOG = [
   { id: "SEC01", name: "Plaintext secrets", category: "secrets", maps: "CWE-798" },
   { id: "SUP01", name: "Unpinned / remote launch", category: "supply_chain", maps: "MCP supply-chain" },
   { id: "SUP02", name: "Vulnerable / malicious package", category: "vulnerable_component", maps: "CWE-1395" },
+  { id: "SUP03", name: "Publisher impersonation / typosquat", category: "supply_chain", maps: "OWASP ASI04" },
   { id: "CFG01", name: "Dangerous launch config", category: "insecure_config", maps: "CWE-250" },
   { id: "NET01", name: "Insecure transport", category: "insecure_transport", maps: "CWE-319" },
+  { id: "HDR01", name: "x-mcp-header misuse (MCP 2026-07-28)", category: "insecure_transport", maps: "CWE-113" },
+  { id: "CACHE01", name: "Tool list cache hints (MCP 2026-07-28)", category: "rug_pull", maps: "MCP rug pull" },
 ] as const;
