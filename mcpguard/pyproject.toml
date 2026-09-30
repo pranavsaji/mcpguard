@@ -38,6 +38,11 @@ mcpguard = "mcpguard.cli:main"
 [project.urls]
 Homepage = "https://github.com/pranavsaji/mcpguard"
 
+[tool.hatch.build]
+# The repo .gitignore has a broad `*secret*` rule; hatch applies it to the build, which
+# would drop the SEC01 detector module. `artifacts` force-includes it in every target.
+artifacts = ["src/mcpguard/rules/secrets.py"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/mcpguard"]
 
