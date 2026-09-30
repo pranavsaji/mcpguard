@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcpguard"
-version = "0.2.0"
+version = "0.3.0"
 description = "Security scanner for Model Context Protocol (MCP) servers — the `npm audit` for MCP."
 readme = "README.md"
 requires-python = ">=3.10"

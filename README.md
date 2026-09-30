@@ -2,9 +2,9 @@
 
 **A security scanner for Model Context Protocol (MCP) servers — the `npm audit` for MCP.**
 
-![version](https://img.shields.io/badge/version-0.2.0-blue)
+![version](https://img.shields.io/badge/version-0.3.0-blue)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
-![tests](https://img.shields.io/badge/tests-960%20passing-brightgreen)
+![tests](https://img.shields.io/badge/tests-962%20passing-brightgreen)
 ![red team](https://img.shields.io/badge/red%20team-100%25%20detected%20(122%20cases)-brightgreen)
 ![license](https://img.shields.io/badge/license-MIT-lightgrey)
 
@@ -369,7 +369,7 @@ and a stable finding sort give byte-identical JSON for the same input.
 ```json
 {
   "tool": "mcpguard",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "gate": "high",
   "ok": false,
   "summary": { "targets": 1, "total_findings": 1, "by_severity": { "high": 1 } },
@@ -903,7 +903,7 @@ Keys in `03` are **fake but format-valid** (the AWS pair is AWS's documentation 
 ```bash
 # Python engine
 cd mcpguard
-pytest --cov=mcpguard            # 771 tests; 94% branch coverage
+pytest --cov=mcpguard            # 773 tests; 94% branch coverage
 pytest -m live                   # real Jev / Claude calls (needs keys; skips cleanly without)
 mcpguard redteam                 # detection / false-positive report
 mypy                             # strict
@@ -916,7 +916,7 @@ npm run typecheck && npm run lint && npm run build
 
 | Control | Standard held |
 |---|---|
-| Tests | **960 automated** — 771 Python (+2 live) and 189 web. Every rule has true-positive and benign-lookalike cases; the 122 red-team cases are pinned one test each; the policy gate's safety properties (most-restrictive-wins, fail-closed, taint, trifecta, schema pinning, SSRF-safe OAuth discovery) are mutation-checked. |
+| Tests | **962 automated** — 773 Python (+2 live) and 189 web. Every rule has true-positive and benign-lookalike cases; the 122 red-team cases are pinned one test each; the policy gate's safety properties (most-restrictive-wins, fail-closed, taint, trifecta, schema pinning, SSRF-safe OAuth discovery) are mutation-checked. |
 | Cross-engine parity | The TypeScript engine reproduces the Python output exactly on shared fixtures — deterministic rules and the AI layer. |
 | AI layer | Jev and Claude tested against fake transports (wire format, retries, refusals, circuit breaker); live smoke tests with real keys. |
 | Hostile input | ReDoS tests (2 MB adversarial inputs stay linear), malformed and deeply nested configs, partial findings kept on rule crashes, terminal-escape and lone-surrogate sanitization of reports. |

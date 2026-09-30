@@ -18,7 +18,7 @@ import {
 } from "./types";
 
 /** Matches the Python engine's version; findings are identical for shared rules. */
-export const ENGINE_VERSION = "0.2.0";
+export const ENGINE_VERSION = "0.3.0";
 
 function bySeverity(findings: Finding[]): Record<string, number> {
   const out: Record<string, number> = {};
