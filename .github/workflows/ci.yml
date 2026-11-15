@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  python:
+    name: Scanner core (Python ${{ matrix.python }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.12"]
+    defaults:
+      run:
+        working-directory: mcpguard
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: pip install -e ".[dev]"
+      - run: pytest
+      - name: Scan the bundled samples
+        run: mcpguard scan ../samples/02-best-practice-pinned.json
+
+  web:
+    name: Web scanner (Vitest)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: mcpguard-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: mcpguard-web/package-lock.json
+      - run: npm ci
+      - run: npx vitest run
