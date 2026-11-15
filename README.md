@@ -2,6 +2,7 @@
 
 **A security scanner for Model Context Protocol (MCP) servers — the `npm audit` for MCP.**
 
+[![CI](https://github.com/pranavsaji/mcpguard/actions/workflows/ci.yml/badge.svg)](https://github.com/pranavsaji/mcpguard/actions/workflows/ci.yml)
 ![version](https://img.shields.io/badge/version-0.3.0-blue)
 ![python](https://img.shields.io/badge/python-3.10%2B-blue)
 ![tests](https://img.shields.io/badge/tests-962%20passing-brightgreen)
